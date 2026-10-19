@@ -9,6 +9,13 @@ public class OrderDAO {
         String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_status, total_amount) VALUES (?, ?, 'CONFIRMED', ?)";
         String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price) SELECT ?, product_id, 1, ? FROM telecom_product WHERE product_code = ?";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
+        
+        // Find product type to determine required hardware
+        String productTypeQuery = "SELECT product_type FROM telecom_product WHERE product_code = ?";
+        
+        // Reserve an available inventory unit for this order
+        String reserveInventoryQuery = "UPDATE inventory_item SET status = 'RESERVED', assigned_order_id = ? " +
+                                       "WHERE item_type = ? AND status = 'AVAILABLE' LIMIT 1";
 
         String orderNumber = "ORD-" + System.currentTimeMillis();
         String txRef = "TXN-" + System.currentTimeMillis();
@@ -54,9 +61,35 @@ public class OrderDAO {
                 payStmt.executeUpdate();
             }
 
-            // Commit Transaction
+            // 4. Reserve Matching Inventory
+            String requiredItemType = "SIM";
+            try (PreparedStatement pTypeStmt = conn.prepareStatement(productTypeQuery)) {
+                pTypeStmt.setString(1, productCode);
+                ResultSet rs = pTypeStmt.executeQuery();
+                if (rs.next()) {
+                    String pType = rs.getString("product_type");
+                    if ("BROADBAND".equalsIgnoreCase(pType)) {
+                        requiredItemType = "ROUTER";
+                    } else if ("ENTERPRISE".equalsIgnoreCase(pType)) {
+                        requiredItemType = "ONT";
+                    }
+                }
+            }
+
+            try (PreparedStatement invStmt = conn.prepareStatement(reserveInventoryQuery)) {
+                invStmt.setLong(1, generatedOrderId);
+                invStmt.setString(2, requiredItemType);
+                int rowsUpdated = invStmt.executeUpdate();
+                if (rowsUpdated > 0) {
+                    System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", requiredItemType, generatedOrderId);
+                } else {
+                    System.out.printf("[!] Inventory Notice: No available %s in stock. Order placed on backorder.\n", requiredItemType);
+                }
+            }
+
+            // Commit all changes together
             conn.commit();
-            System.out.println("\n[✔] Order Placed Successfully! Order Number: " + orderNumber);
+            System.out.println("[✔] Order Placed Successfully! Order Number: " + orderNumber);
             return true;
 
         } catch (SQLException e) {
