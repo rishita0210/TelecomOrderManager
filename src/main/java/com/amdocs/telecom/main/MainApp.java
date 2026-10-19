@@ -4,9 +4,11 @@ import com.amdocs.telecom.dao.CustomerDAO;
 import com.amdocs.telecom.dao.OrderDAO;
 import com.amdocs.telecom.dao.ProductDAO;
 import com.amdocs.telecom.dao.ProvisioningDAO;
+import com.amdocs.telecom.dao.ReportDAO;
 import com.amdocs.telecom.model.Customer;
 import com.amdocs.telecom.model.TelecomProduct;
 import com.amdocs.telecom.util.DBConnection;
+
 
 import java.sql.Connection;
 import java.util.List;
@@ -18,6 +20,7 @@ public class MainApp {
     private static final ProductDAO productDAO = new ProductDAO();
     private static final OrderDAO orderDAO = new OrderDAO();
     private static final ProvisioningDAO provisioningDAO = new ProvisioningDAO();
+    private static final ReportDAO reportDAO = new ReportDAO();
 
     public static void main(String[] args) {
         Connection conn = DBConnection.getConnection();
@@ -88,6 +91,44 @@ public class MainApp {
             }
         }
     }
+    private static void handleAdminPortal() {
+    boolean back = false;
+    while (!back) {
+        printHeader("ADMINISTRATOR PORTAL");
+        System.out.println("1. View System Analytics & Inventory Audit");
+        System.out.println("2. Export Orders Report to CSV");
+        System.out.println("3. Back to Main Menu");
+        System.out.print("Enter your choice (1-3): ");
+
+        String choice = scanner.nextLine().trim();
+
+        switch (choice) {
+            case "1":
+                printHeader("SYSTEM ANALYTICS & AUDIT");
+                reportDAO.displaySystemAnalytics();
+                System.out.print("\nPress Enter to return to menu...");
+                scanner.nextLine();
+                break;
+            case "2":
+                printHeader("EXPORT REPORT TO CSV");
+                String fileName = "orders_report.csv";
+                boolean success = reportDAO.exportOrdersToCSV(fileName);
+                if (success) {
+                    System.out.println("[✔] SUCCESS: Report exported successfully as " + fileName);
+                } else {
+                    System.out.println("[X] Export failed.");
+                }
+                System.out.print("\nPress Enter to return to menu...");
+                scanner.nextLine();
+                break;
+            case "3":
+                back = true;
+                break;
+            default:
+                System.out.println("\n[!] Invalid choice. Please enter 1, 2, or 3.");
+        }
+    }
+}
 
     private static void registerCustomer() {
         printHeader("CUSTOMER REGISTRATION");
@@ -211,12 +252,12 @@ public class MainApp {
         scanner.nextLine();
     }
 
-    private static void handleAdminPortal() {
-        printHeader("ADMINISTRATOR PORTAL");
-        System.out.println("Admin analytics and report features go here.");
-        System.out.print("Press Enter to return to main menu...");
-        scanner.nextLine();
-    }
+    // private static void handleAdminPortal() {
+    //     printHeader("ADMINISTRATOR PORTAL");
+    //     System.out.println("Admin analytics and report features go here.");
+    //     System.out.print("Press Enter to return to main menu...");
+    //     scanner.nextLine();
+    // }
 
     private static void printHeader(String title) {
         System.out.println("\n==================================================");

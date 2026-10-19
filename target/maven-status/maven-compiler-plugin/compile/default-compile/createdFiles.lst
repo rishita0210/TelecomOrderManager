@@ -1,5 +1,6 @@
 com/amdocs/telecom/dao/ProductDAO.class
 com/amdocs/telecom/dao/InventoryDAO.class
+com/amdocs/telecom/dao/ReportDAO.class
 com/amdocs/telecom/model/Customer.class
 com/amdocs/telecom/dao/OrderDAO.class
 com/amdocs/telecom/dao/CustomerDAO.class
