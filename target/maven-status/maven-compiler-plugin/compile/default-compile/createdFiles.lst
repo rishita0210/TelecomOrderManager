@@ -7,3 +7,4 @@ com/amdocs/telecom/model/InventoryItem.class
 com/amdocs/telecom/model/TelecomProduct.class
 com/amdocs/telecom/main/MainApp.class
 com/amdocs/telecom/util/DBConnection.class
+com/amdocs/telecom/dao/ProvisioningDAO.class

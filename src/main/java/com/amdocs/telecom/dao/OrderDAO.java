@@ -9,6 +9,7 @@ public class OrderDAO {
         String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_status, total_amount) VALUES (?, ?, 'CONFIRMED', ?)";
         String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price) SELECT ?, product_id, 1, ? FROM telecom_product WHERE product_code = ?";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
+        String provisioningQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
         
         // Find product type to determine required hardware
         String productTypeQuery = "SELECT product_type FROM telecom_product WHERE product_code = ?";
@@ -74,6 +75,14 @@ public class OrderDAO {
                         requiredItemType = "ONT";
                     }
                 }
+            }
+
+            // 5. Create Network Provisioning Request
+            try (PreparedStatement provStmt = conn.prepareStatement(provisioningQuery)) {
+                provStmt.setLong(1, generatedOrderId);
+                provStmt.setString(2, requiredItemType);
+                provStmt.executeUpdate();
+                System.out.printf("[✔] Network Engine: Provisioning ticket generated (PENDING) for Order #%d\n", generatedOrderId);
             }
 
             try (PreparedStatement invStmt = conn.prepareStatement(reserveInventoryQuery)) {
