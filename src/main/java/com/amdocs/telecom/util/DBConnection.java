@@ -5,9 +5,10 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public class DBConnection {
-    private static final String URL = "jdbc:mysql://localhost:3306/tonpms_db?useSSL=false&serverTimezone=UTC";
+    // Added allowPublicKeyRetrieval=true to fix the connection error
+    private static final String URL = "jdbc:mysql://localhost:3306/tonpms_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static final String USER = "root"; 
-    private static final String PASSWORD = "Simon2009@"; // Add your MySQL password if you set one
+    private static final String PASSWORD = "Simon2009@"; // Update if your local MySQL has a password
 
     private static Connection connection = null;
 

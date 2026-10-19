@@ -1,6 +1,7 @@
 package com.amdocs.telecom.main;
 
 import com.amdocs.telecom.dao.CustomerDAO;
+import com.amdocs.telecom.dao.OrderDAO;
 import com.amdocs.telecom.dao.ProductDAO;
 import com.amdocs.telecom.model.Customer;
 import com.amdocs.telecom.model.TelecomProduct;
@@ -14,6 +15,7 @@ public class MainApp {
     private static final Scanner scanner = new Scanner(System.in);
     private static final CustomerDAO customerDAO = new CustomerDAO();
     private static final ProductDAO productDAO = new ProductDAO();
+    private static final OrderDAO orderDAO = new OrderDAO();
 
     public static void main(String[] args) {
         // Test database connection on startup
@@ -51,32 +53,6 @@ public class MainApp {
         scanner.close();
     }
 
-    private static void handleCustomerPortal() {
-        boolean back = false;
-        while (!back) {
-            printHeader("CUSTOMER PORTAL");
-            System.out.println("1. Register New Customer");
-            System.out.println("2. Browse Telecom Product Catalog");
-            System.out.println("3. Back to Main Menu");
-            System.out.print("Enter your choice (1-3): ");
-
-            String choice = scanner.nextLine().trim();
-
-            switch (choice) {
-                case "1":
-                    registerCustomer();
-                    break;
-                case "2":
-                    browseProducts();
-                    break;
-                case "3":
-                    back = true;
-                    break;
-                default:
-                    System.out.println("\n[!] Invalid choice. Try again.");
-            }
-        }
-    }
 
     private static void registerCustomer() {
         printHeader("CUSTOMER REGISTRATION");
@@ -117,6 +93,15 @@ public class MainApp {
 
     private static void browseProducts() {
         printHeader("TELECOM PRODUCT CATALOG");
+        printProductTable();
+        System.out.print("\nPress Enter to return to menu...");
+        scanner.nextLine();
+    }
+    private static void displayProductsForOrder() {
+        printHeader("TELECOM PRODUCT CATALOG");
+        printProductTable();
+    }
+    private static void printProductTable() {
         List<TelecomProduct> products = productDAO.getAllProducts();
 
         if (products.isEmpty()) {
@@ -131,8 +116,6 @@ public class MainApp {
                 p.getProductCode(), p.getProductName(), p.getProductType(), p.getMonthlyPrice());
         }
         System.out.println("------------------------------------------------------------------");
-        System.out.print("\nPress Enter to return to menu...");
-        scanner.nextLine();
     }
 
     private static void handleAdminPortal() {
@@ -147,4 +130,72 @@ public class MainApp {
         System.out.println("     " + title);
         System.out.println("==================================================");
     }
+
+    private static void handleCustomerPortal() {
+        boolean back = false;
+        while (!back) {
+            printHeader("CUSTOMER PORTAL");
+            System.out.println("1. Register New Customer");
+            System.out.println("2. Browse Telecom Product Catalog");
+            System.out.println("3. Place New Telecom Order");
+            System.out.println("4. Back to Main Menu");
+            System.out.print("Enter your choice (1-4): ");
+
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1":
+                    registerCustomer();
+                    break;
+                case "2":
+                    browseProducts();
+                    break;
+                case "3":
+                    placeOrderWorkflow();
+                    break;
+                case "4":
+                    back = true;
+                    break;
+                default:
+                    System.out.println("\n[!] Invalid choice. Try again.");
+            }
+        }
+    }
+
+    private static void placeOrderWorkflow() {
+    printHeader("PLACE TELECOM ORDER");
+    try {
+        System.out.print("Enter your Customer ID (e.g., 1): ");
+        int customerId = Integer.parseInt(scanner.nextLine().trim());
+
+        displayProductsForOrder();
+
+        System.out.print("\nEnter Product Code to order (e.g., PROD1001): ");
+        String productCode = scanner.nextLine().trim();
+
+        // Automatically fetch the product and its price
+        TelecomProduct selectedProduct = productDAO.getProductByCode(productCode);
+        if (selectedProduct == null) {
+            System.out.println("\n[X] Invalid Product Code. Order canceled.");
+            System.out.print("\nPress Enter to return to menu...");
+            scanner.nextLine();
+            return;
+        }
+
+        double price = selectedProduct.getMonthlyPrice();
+        System.out.printf("Selected: %s | Amount Due: $%.2f\n", selectedProduct.getProductName(), price);
+
+        System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
+        String paymentMode = scanner.nextLine().trim().toUpperCase();
+
+        boolean success = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
+        if (!success) {
+            System.out.println("\n[X] Order creation failed.");
+        }
+    } catch (NumberFormatException e) {
+        System.out.println("\n[X] Invalid input format. Please enter numbers where required.");
+    }
+    System.out.print("\nPress Enter to return to menu...");
+    scanner.nextLine();
+}
 }

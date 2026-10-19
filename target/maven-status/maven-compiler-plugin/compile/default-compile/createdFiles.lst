@@ -1,0 +1,9 @@
+com/amdocs/telecom/dao/ProductDAO.class
+com/amdocs/telecom/dao/InventoryDAO.class
+com/amdocs/telecom/model/Customer.class
+com/amdocs/telecom/dao/OrderDAO.class
+com/amdocs/telecom/dao/CustomerDAO.class
+com/amdocs/telecom/model/InventoryItem.class
+com/amdocs/telecom/model/TelecomProduct.class
+com/amdocs/telecom/main/MainApp.class
+com/amdocs/telecom/util/DBConnection.class

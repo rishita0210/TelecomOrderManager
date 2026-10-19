@@ -35,4 +35,25 @@ public class ProductDAO {
         }
         return products;
     }
+
+    public TelecomProduct getProductByCode(String productCode) {
+    String query = "SELECT * FROM telecom_product WHERE product_code = ?";
+    try (Connection conn = DBConnection.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(query)) {
+        pstmt.setString(1, productCode);
+        ResultSet rs = pstmt.executeQuery();
+        if (rs.next()) {
+            TelecomProduct p = new TelecomProduct();
+            p.setProductId(rs.getInt("product_id"));
+            p.setProductCode(rs.getString("product_code"));
+            p.setProductName(rs.getString("product_name"));
+            p.setProductType(rs.getString("product_type"));
+            p.setMonthlyPrice(rs.getDouble("monthly_price"));
+            return p;
+        }
+    } catch (SQLException e) {
+        System.err.println("Error fetching product by code: " + e.getMessage());
+    }
+    return null;
+}
 }
