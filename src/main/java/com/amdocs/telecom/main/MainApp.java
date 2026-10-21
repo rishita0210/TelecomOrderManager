@@ -9,6 +9,7 @@ import com.amdocs.telecom.dao.ReportDAO;
 import com.amdocs.telecom.model.Customer;
 import com.amdocs.telecom.model.TelecomProduct;
 import com.amdocs.telecom.util.DBConnection;
+import com.amdocs.telecom.service.ProvisioningService;
 
 import java.util.Optional;
 
@@ -24,6 +25,7 @@ public class MainApp {
     private static final ProvisioningDAO provisioningDAO = new ProvisioningDAO();
     private static final ReportDAO reportDAO = new ReportDAO();
     private static final EngineerDAO engineerDAO = new EngineerDAO();
+    private static final ProvisioningService provisioningService = new ProvisioningService();
 
     public static void main(String[] args) {
         Connection conn = DBConnection.getConnection();
@@ -51,6 +53,7 @@ public class MainApp {
                     break;
                 case "3":
                     running = false;
+                    provisioningService.shutdown();
                     System.out.println("\nThank you for using the Telecom System. Goodbye!");
                     break;
                 default:
@@ -232,9 +235,7 @@ public class MainApp {
             boolean success = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
 
             if (success) {
-                // ==========================================
-                // PASTE YOUR SNIPPET RIGHT HERE:
-                // ==========================================
+                System.out.println("[*] Provisioning request dispatched to background worker pool...");
                 if (productCode.startsWith("PROD2") || productCode.startsWith("PROD3")) {
                     System.out.println("\n[!] Service requires on-site installation. Dispatching field engineer...");
                     // Assigning least busy engineer in Bangalore
