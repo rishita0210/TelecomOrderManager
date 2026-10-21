@@ -52,6 +52,15 @@ public class Customer {
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
 
+    public String getIdentityStatus() { return identityStatus; }
+    public void setIdentityStatus(String identityStatus) { this.identityStatus = identityStatus; }
+
+    public String getAccountStatus() { return accountStatus; }
+    public void setAccountStatus(String accountStatus) { this.accountStatus = accountStatus; }
+
+    public java.sql.Timestamp getRegistrationDate() { return registrationDate; }
+    public void setRegistrationDate(java.sql.Timestamp registrationDate) { this.registrationDate = registrationDate; }
+
     @Override
     public String toString() {
         return "Customer [ID=" + customerId + ", Name=" + customerName + ", Email=" + email + "]";
