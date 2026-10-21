@@ -1,6 +1,7 @@
 package com.amdocs.telecom.main;
 
 import com.amdocs.telecom.dao.CustomerDAO;
+import com.amdocs.telecom.dao.EngineerDAO;
 import com.amdocs.telecom.dao.OrderDAO;
 import com.amdocs.telecom.dao.ProductDAO;
 import com.amdocs.telecom.dao.ProvisioningDAO;
@@ -9,6 +10,7 @@ import com.amdocs.telecom.model.Customer;
 import com.amdocs.telecom.model.TelecomProduct;
 import com.amdocs.telecom.util.DBConnection;
 
+import java.util.Optional;
 
 import java.sql.Connection;
 import java.util.List;
@@ -21,6 +23,7 @@ public class MainApp {
     private static final OrderDAO orderDAO = new OrderDAO();
     private static final ProvisioningDAO provisioningDAO = new ProvisioningDAO();
     private static final ReportDAO reportDAO = new ReportDAO();
+    private static final EngineerDAO engineerDAO = new EngineerDAO();
 
     public static void main(String[] args) {
         Connection conn = DBConnection.getConnection();
@@ -193,7 +196,7 @@ public class MainApp {
         System.out.println("------------------------------------------------------------------");
     }
 
-    private static void placeOrderWorkflow() {
+   private static void placeOrderWorkflow() {
         printHeader("PLACE TELECOM ORDER");
         try {
             System.out.print("Enter your Customer ID (e.g., 1): ");
@@ -218,8 +221,23 @@ public class MainApp {
             System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
             String paymentMode = scanner.nextLine().trim().toUpperCase();
 
+            // 1. Place the order
             boolean success = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
-            if (!success) {
+
+            if (success) {
+                // ==========================================
+                // PASTE YOUR SNIPPET RIGHT HERE:
+                // ==========================================
+                if (productCode.startsWith("PROD2") || productCode.startsWith("PROD3")) {
+                    System.out.println("\n[!] Service requires on-site installation. Dispatching field engineer...");
+                    // Assigning least busy engineer in Bangalore
+                    Optional<com.amdocs.telecom.model.FieldEngineer> assigned = engineerDAO.assignLeastBusyEngineer("Bangalore");
+                    assigned.ifPresent(eng -> {
+                        System.out.printf("[✔] Technician Assigned: %s (Current active load: %d tasks)\n", 
+                            eng.getEngineerName(), eng.getActiveTasks() + 1);
+                    });
+                }
+            } else {
                 System.out.println("\n[X] Order creation failed. Please check customer ID and product code.");
             }
         } catch (NumberFormatException e) {
