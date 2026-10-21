@@ -68,8 +68,9 @@ public class MainApp {
             System.out.println("2. Browse Telecom Product Catalog");
             System.out.println("3. Place New Telecom Order");
             System.out.println("4. Track Order & Activate Service");
-            System.out.println("5. Back to Main Menu");
-            System.out.print("Enter your choice (1-5): ");
+            System.out.println("5. View My Past Orders");
+            System.out.println("6. Back to Main Menu");
+            System.out.print("Enter your choice (1-6): ");
 
             String choice = scanner.nextLine().trim();
 
@@ -87,13 +88,17 @@ public class MainApp {
                     trackAndActivateOrder();
                     break;
                 case "5":
+                    viewMyOrdersWorkflow();
+                    break;
+                case "6":
                     back = true;
                     break;
                 default:
-                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 5.");
+                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 6.");
             }
         }
     }
+  
     private static void handleAdminPortal() {
     boolean back = false;
     while (!back) {
@@ -196,6 +201,8 @@ public class MainApp {
         System.out.println("------------------------------------------------------------------");
     }
 
+    
+
    private static void placeOrderWorkflow() {
         printHeader("PLACE TELECOM ORDER");
         try {
@@ -265,6 +272,19 @@ public class MainApp {
             }
         } catch (NumberFormatException e) {
             System.out.println("\n[X] Invalid Order ID format. Please enter a valid number.");
+        }
+        System.out.print("\nPress Enter to return to menu...");
+        scanner.nextLine();
+    }
+
+    private static void viewMyOrdersWorkflow() {
+        printHeader("MY ORDER HISTORY");
+        try {
+            System.out.print("Enter your Customer ID (e.g., 1): ");
+            int customerId = Integer.parseInt(scanner.nextLine().trim());
+            orderDAO.displayCustomerOrders(customerId);
+        } catch (NumberFormatException e) {
+            System.out.println("\n[X] Invalid Customer ID format.");
         }
         System.out.print("\nPress Enter to return to menu...");
         scanner.nextLine();

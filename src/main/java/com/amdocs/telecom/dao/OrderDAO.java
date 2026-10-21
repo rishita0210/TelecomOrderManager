@@ -62,7 +62,7 @@ public class OrderDAO {
                 payStmt.executeUpdate();
             }
 
-            // 4. Reserve Matching Inventory
+            // 4. Determine Hardware Requirement from Product Type
             String requiredItemType = "SIM";
             try (PreparedStatement pTypeStmt = conn.prepareStatement(productTypeQuery)) {
                 pTypeStmt.setString(1, productCode);
@@ -85,6 +85,7 @@ public class OrderDAO {
                 System.out.printf("[✔] Network Engine: Provisioning ticket generated (PENDING) for Order #%d\n", generatedOrderId);
             }
 
+            // 6. Reserve Inventory
             try (PreparedStatement invStmt = conn.prepareStatement(reserveInventoryQuery)) {
                 invStmt.setLong(1, generatedOrderId);
                 invStmt.setString(2, requiredItemType);
@@ -115,6 +116,49 @@ public class OrderDAO {
             } catch (SQLException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    // Fetch and display all past orders for a customer using SQL JOINs
+    public void displayCustomerOrders(int customerId) {
+        String query = "SELECT o.order_id, o.order_number, p.product_name, o.total_amount, " +
+                       "o.order_status, o.order_date, pay.payment_mode " +
+                       "FROM telecom_order o " +
+                       "JOIN order_item oi ON o.order_id = oi.order_id " +
+                       "JOIN telecom_product p ON oi.product_id = p.product_id " +
+                       "LEFT JOIN order_payment pay ON o.order_id = pay.order_id " +
+                       "WHERE o.customer_id = ? " +
+                       "ORDER BY o.order_date DESC";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+
+            pstmt.setInt(1, customerId);
+            ResultSet rs = pstmt.executeQuery();
+
+            boolean found = false;
+            System.out.printf("%-8s %-22s %-20s %-10s %-12s %-12s\n", 
+                "Order ID", "Order Number", "Product", "Amount", "Status", "Payment");
+            System.out.println("-----------------------------------------------------------------------------------------");
+
+            while (rs.next()) {
+                found = true;
+                System.out.printf("%-8d %-22s %-20s $%-9.2f %-12s %-12s\n",
+                    rs.getInt("order_id"),
+                    rs.getString("order_number"),
+                    rs.getString("product_name"),
+                    rs.getDouble("total_amount"),
+                    rs.getString("order_status"),
+                    rs.getString("payment_mode") != null ? rs.getString("payment_mode") : "N/A");
+            }
+
+            if (!found) {
+                System.out.println("No past orders found for Customer ID: " + customerId);
+            }
+            System.out.println("-----------------------------------------------------------------------------------------");
+
+        } catch (SQLException e) {
+            System.err.println("Error fetching customer orders: " + e.getMessage());
         }
     }
 }
