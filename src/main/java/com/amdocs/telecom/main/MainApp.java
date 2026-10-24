@@ -8,6 +8,9 @@ import com.amdocs.telecom.service.ProvisioningService;
 import com.amdocs.telecom.util.CaptchaGenerator;
 import com.amdocs.telecom.util.DBConnection;
 import com.amdocs.telecom.util.OTPService;
+import com.amdocs.telecom.util.PaymentFactory;
+import com.amdocs.telecom.util.PaymentProcessor;
+
 
 import java.sql.Connection;
 import java.util.List;
@@ -23,7 +26,7 @@ public class MainApp {
     private static final ReportDAO reportDAO = new ReportDAO();
     private static final EngineerDAO engineerDAO = new EngineerDAO();
     private static final ProvisioningService provisioningService = new ProvisioningService();
-
+    
     // Track consecutive failed login attempts for account locking
     private static int failedAttempts = 0;
 
@@ -196,8 +199,9 @@ public class MainApp {
     private static void registerCustomer() {
         printHeader("CUSTOMER REGISTRATION");
         try {
-            System.out.print("Enter Customer Number (e.g., CUST-103): ");
-            String custNo = scanner.nextLine().trim();
+            // Auto-generate customer number using current system timestamp
+        String custNo = "CUST-" + (System.currentTimeMillis() % 100000);
+        System.out.println("Assigned Customer Number: " + custNo);
 
             System.out.print("Enter Full Name: ");
             String name = scanner.nextLine().trim();
@@ -256,7 +260,8 @@ public class MainApp {
         System.out.println("------------------------------------------------------------------");
     }
 
-    private static void placeOrderWorkflow(int customerId) {
+   
+        private static void placeOrderWorkflow(int customerId) {
         printHeader("PLACE TELECOM ORDER");
         try {
             printProductTable();
@@ -265,22 +270,33 @@ public class MainApp {
             String productCode = scanner.nextLine().trim();
 
             TelecomProduct selectedProduct = productDAO.getProductByCode(productCode);
-            double price = 0.0;
-            if (selectedProduct != null) {
-                price = selectedProduct.getMonthlyPrice();
-                System.out.printf("Selected: %s | Amount Due: $%.2f\n", selectedProduct.getProductName(), price);
-            } else {
-                System.out.print("Enter Monthly Price for this product: ");
-                price = Double.parseDouble(scanner.nextLine().trim());
+            if (selectedProduct == null) {
+                System.out.println("\n[X] Invalid Product Code. Order canceled.");
+                System.out.print("\nPress Enter to return to menu...");
+                scanner.nextLine();
+                return;
             }
+
+            double price = selectedProduct.getMonthlyPrice();
+            System.out.printf("Selected: %s | Amount Due: $%.2f\n", selectedProduct.getProductName(), price);
 
             System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
             String paymentMode = scanner.nextLine().trim().toUpperCase();
 
-            boolean success = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
+            PaymentProcessor processor = PaymentFactory.getProcessor(paymentMode);
+            if (processor == null) {
+                System.out.println("\n[X] Invalid Payment Mode. Must be UPI, CARD, or NET_BANKING.");
+                System.out.print("\nPress Enter to return to menu...");
+                scanner.nextLine();
+                return;
+            }
+            processor.process(price);
 
-            if (success) {
-                // If physical broadband, dispatch engineer
+            // Returns the database-generated Order ID (e.g., 8)
+            long newOrderId = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
+
+            if (newOrderId > 0) {
+                // 1. Dispatch technician for on-site services
                 if (productCode.startsWith("PROD2") || productCode.startsWith("PROD3")) {
                     System.out.println("\n[!] Service requires on-site installation. Dispatching field engineer...");
                     Optional<FieldEngineer> assigned = engineerDAO.assignLeastBusyEngineer("Bangalore");
@@ -289,6 +305,11 @@ public class MainApp {
                             eng.getEngineerName(), eng.getActiveTasks() + 1);
                     });
                 }
+
+                // 2. Submit task to the background ExecutorService thread pool
+                System.out.println("[*] Provisioning request dispatched to background worker pool...");
+                provisioningService.triggerAsyncProvisioning(newOrderId);
+
             } else {
                 System.out.println("\n[X] Order creation failed.");
             }
