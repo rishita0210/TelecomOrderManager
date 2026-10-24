@@ -7,6 +7,7 @@ public class Customer {
     private String customerNumber;
     private String customerName;
     private String email;
+    private String password; // Added field
     private String mobileNumber;
     private String customerType;
     private String address;
@@ -17,11 +18,13 @@ public class Customer {
 
     public Customer() {}
 
-    public Customer(String customerNumber, String customerName, String email, 
+    // Constructor for registration
+    public Customer(String customerNumber, String customerName, String email, String password,
                     String mobileNumber, String customerType, String address, String city) {
         this.customerNumber = customerNumber;
         this.customerName = customerName;
         this.email = email;
+        this.password = password;
         this.mobileNumber = mobileNumber;
         this.customerType = customerType;
         this.address = address;
@@ -39,6 +42,9 @@ public class Customer {
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
 
     public String getMobileNumber() { return mobileNumber; }
     public void setMobileNumber(String mobileNumber) { this.mobileNumber = mobileNumber; }
@@ -58,8 +64,8 @@ public class Customer {
     public String getAccountStatus() { return accountStatus; }
     public void setAccountStatus(String accountStatus) { this.accountStatus = accountStatus; }
 
-    public java.sql.Timestamp getRegistrationDate() { return registrationDate; }
-    public void setRegistrationDate(java.sql.Timestamp registrationDate) { this.registrationDate = registrationDate; }
+    public Timestamp getRegistrationDate() { return registrationDate; }
+    public void setRegistrationDate(Timestamp registrationDate) { this.registrationDate = registrationDate; }
 
     @Override
     public String toString() {

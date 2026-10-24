@@ -81,80 +81,6 @@ public class MainApp {
         }
         scanner.close();
     }
-
-    // =========================================================================
-    // AUTHENTICATION & SECURITY (Page 2: CAPTCHA, OTP, Account Locking)
-    // =========================================================================
-    private static void handleCustomerLogin() {
-        printHeader("CUSTOMER LOGIN & AUTHENTICATION");
-
-        if (failedAttempts >= 3) {
-            System.out.println("\n[X] ACCOUNT LOCKED: Exceeded maximum 3 failed attempts. Contact administrator.");
-            return;
-        }
-
-        System.out.print("Enter Registered Email: ");
-        String email = scanner.nextLine().trim();
-
-        Customer customer = customerDAO.getCustomerByEmail(email);
-        if (customer == null) {
-            failedAttempts++;
-            System.out.printf("\n[X] Authentication failed: User not found. (%d/3 attempts used)\n", failedAttempts);
-            return;
-        }
-
-        // 1. CAPTCHA Verification
-        String generatedCaptcha = CaptchaGenerator.generateCaptcha();
-        System.out.println("\n[SECURITY CHECK] CAPTCHA CODE: >>> " + generatedCaptcha + " <<<");
-        System.out.print("Enter CAPTCHA exactly as shown: ");
-        String enteredCaptcha = scanner.nextLine().trim();
-
-        if (!generatedCaptcha.equals(enteredCaptcha)) {
-            failedAttempts++;
-            System.out.printf("\n[X] Security verification failed: Invalid CAPTCHA. (%d/3 attempts used)\n", failedAttempts);
-            return;
-        }
-
-        // 2. Simulated 2-Factor OTP Verification
-        String generatedOTP = OTPService.generateOTP();
-        System.out.println("\n[SMS/EMAIL SIMULATOR] 2FA One-Time Password (OTP): " + generatedOTP);
-        System.out.print("Enter 6-digit OTP: ");
-        String enteredOTP = scanner.nextLine().trim();
-
-        if (!generatedOTP.equals(enteredOTP)) {
-            failedAttempts++;
-            System.out.printf("\n[X] 2FA verification failed: Incorrect OTP. (%d/3 attempts used)\n", failedAttempts);
-            return;
-        }
-
-        // Successful authentication
-        failedAttempts = 0;
-        System.out.printf("\n[✔] Login Successful! Welcome back, %s (Customer ID: %d)\n", 
-            customer.getCustomerName(), customer.getCustomerId());
-        
-        handleCustomerDashboard(customer.getCustomerId());
-    }
-
-    private static void handleForgotPassword() {
-        printHeader("PASSWORD RECOVERY / OTP RESET");
-        System.out.print("Enter Registered Mobile or Email: ");
-        String contact = scanner.nextLine().trim();
-
-        String resetOTP = OTPService.generateOTP();
-        System.out.println("\n[DISPATCH] Recovery OTP dispatched to " + contact + ": >>> " + resetOTP + " <<<");
-        System.out.print("Enter the OTP to verify identity: ");
-        String entered = scanner.nextLine().trim();
-
-        if (resetOTP.equals(entered)) {
-            failedAttempts = 0; // Unlock account
-            System.out.println("\n[✔] Identity verified! Account has been unlocked. Please proceed to login.");
-        } else {
-            System.out.println("\n[X] OTP verification failed.");
-        }
-        System.out.print("\nPress Enter to return to main menu...");
-        scanner.nextLine();
-    }
-
     // =========================================================================
     // CUSTOMER DASHBOARD
     // =========================================================================
@@ -191,23 +117,134 @@ public class MainApp {
                     System.out.println("\nLogged out successfully.");
                     break;
                 default:
-                    System.out.println("\n[!] Invalid choice. Try again.");
+                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 5.");
             }
         }
+    }
+    // =========================================================================
+    // AUTHENTICATION & SECURITY (Page 2: CAPTCHA, OTP, Account Locking)
+    // =========================================================================
+    private static void handleCustomerLogin() {
+        printHeader("CUSTOMER LOGIN & AUTHENTICATION");
+
+        if (failedAttempts >= 3) {
+            System.out.println("\n[X] ACCOUNT LOCKED: Exceeded maximum 3 failed attempts. Please use Option 6 (Forgot Password) to unlock.");
+            return;
+        }
+
+        System.out.print("Enter Registered Email: ");
+        String email = scanner.nextLine().trim();
+
+        Customer customer = customerDAO.getCustomerByEmail(email);
+        if (customer == null) {
+            failedAttempts++;
+            System.out.printf("\n[X] Authentication failed: User not found. (%d/3 attempts used)\n", failedAttempts);
+            return;
+        }
+
+        System.out.print("Enter Password: ");
+        String password = scanner.nextLine().trim();
+
+        if (!customer.getPassword().equals(password)) {
+            failedAttempts++;
+            System.out.printf("\n[X] Authentication failed: Invalid Password. (%d/3 attempts used)\n", failedAttempts);
+            return;
+        }
+
+        // 1. CAPTCHA Verification
+        String generatedCaptcha = CaptchaGenerator.generateCaptcha();
+        System.out.println("\n[SECURITY CHECK] CAPTCHA CODE: >>> " + generatedCaptcha + " <<<");
+        System.out.print("Enter CAPTCHA exactly as shown: ");
+        String enteredCaptcha = scanner.nextLine().trim();
+
+        if (!generatedCaptcha.equals(enteredCaptcha)) {
+            failedAttempts++;
+            System.out.printf("\n[X] Security verification failed: Invalid CAPTCHA. (%d/3 attempts used)\n", failedAttempts);
+            return;
+        }
+
+        // 2. Simulated 2-Factor OTP Verification
+        String generatedOTP = OTPService.generateOTP();
+        System.out.println("\n[SMS/EMAIL SIMULATOR] 2FA One-Time Password (OTP): " + generatedOTP);
+        System.out.print("Enter 6-digit OTP: ");
+        String enteredOTP = scanner.nextLine().trim();
+
+        if (!generatedOTP.equals(enteredOTP)) {
+            failedAttempts++;
+            System.out.printf("\n[X] 2FA verification failed: Incorrect OTP. (%d/3 attempts used)\n", failedAttempts);
+            return;
+        }
+
+        // Authentication Successful
+        failedAttempts = 0;
+        System.out.printf("\n[✔] Login Successful! Welcome back, %s (Customer ID: %d)\n", 
+            customer.getCustomerName(), customer.getCustomerId());
+        
+        handleCustomerDashboard(customer.getCustomerId());
+    }
+
+    // =========================================================================
+    // CUSTOMER DASHBOARD
+    // =========================================================================
+    private static void handleForgotPassword() {
+        printHeader("FORGOT PASSWORD / ACCOUNT RECOVERY");
+        System.out.print("Enter Registered Email: ");
+        String email = scanner.nextLine().trim();
+
+        Customer customer = customerDAO.getCustomerByEmail(email);
+        if (customer == null) {
+            System.out.println("\n[X] No customer account found matching that email.");
+            System.out.print("\nPress Enter to return...");
+            scanner.nextLine();
+            return;
+        }
+
+        String resetOTP = OTPService.generateOTP();
+        System.out.println("\n[DISPATCH] Recovery OTP dispatched to " + customer.getMobileNumber() + ": >>> " + resetOTP + " <<<");
+        System.out.print("Enter 6-digit OTP to verify identity: ");
+        String enteredOTP = scanner.nextLine().trim();
+
+        if (!resetOTP.equals(enteredOTP)) {
+            System.out.println("\n[X] OTP verification failed. Password reset aborted.");
+            System.out.print("\nPress Enter to return...");
+            scanner.nextLine();
+            return;
+        }
+
+        System.out.print("Enter New Password: ");
+        String newPassword = scanner.nextLine().trim();
+
+        if (newPassword.isEmpty()) {
+            System.out.println("\n[X] Password cannot be blank.");
+        } else {
+            boolean updated = customerDAO.updatePassword(email, newPassword);
+            if (updated) {
+                failedAttempts = 0; // Reset any previous account locks
+                System.out.println("\n[✔] SUCCESS: Password reset successfully! Your account is unlocked.");
+            } else {
+                System.out.println("\n[X] Database error updating password.");
+            }
+        }
+
+        System.out.print("\nPress Enter to return to main menu...");
+        scanner.nextLine();
     }
 
     private static void registerCustomer() {
         printHeader("CUSTOMER REGISTRATION");
         try {
-            // Auto-generate customer number using current system timestamp
-        String custNo = "CUST-" + (System.currentTimeMillis() % 100000);
-        System.out.println("Assigned Customer Number: " + custNo);
+            // Automatically generate a unique customer business account code:
+            String custNo = "CUST-" + (System.currentTimeMillis() % 1000000);
+            System.out.println("[*] Generated Account ID: " + custNo);
 
             System.out.print("Enter Full Name: ");
             String name = scanner.nextLine().trim();
 
             System.out.print("Enter Email Address: ");
             String email = scanner.nextLine().trim();
+
+            System.out.print("Enter Password: ");
+            String password = scanner.nextLine().trim();
 
             System.out.print("Enter Mobile Number: ");
             String mobile = scanner.nextLine().trim();
@@ -221,11 +258,12 @@ public class MainApp {
             System.out.print("Enter City: ");
             String city = scanner.nextLine().trim();
 
-            Customer customer = new Customer(custNo, name, email, mobile, type, address, city);
+            Customer customer = new Customer(custNo, name, email, password, mobile, type, address, city);
             boolean success = customerDAO.addCustomer(customer);
 
             if (success) {
-                System.out.println("\n[✔] SUCCESS: Registration complete! You can now log in via Option 1.");
+                System.out.println("\n[✔] SUCCESS: Registration complete! Account Number: " + custNo);
+                System.out.println("You can now log in using Option 1 with email: " + email);
             } else {
                 System.out.println("\n[X] FAILURE: Registration failed. Email or Mobile might already exist.");
             }
