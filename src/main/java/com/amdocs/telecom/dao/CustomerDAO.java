@@ -59,6 +59,38 @@ public class CustomerDAO {
         return null;
     }
 
+    // 3. Method to retrieve a customer by ID for Order Validation & Eligibility
+    public Customer getCustomerById(int customerId) {
+        String query = "SELECT * FROM customer WHERE customer_id = ?";
+        Customer customer = null;
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+
+            pstmt.setInt(1, customerId);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                customer = new Customer();
+                customer.setCustomerId(rs.getInt("customer_id"));
+                customer.setCustomerNumber(rs.getString("customer_number"));
+                customer.setCustomerName(rs.getString("customer_name"));
+                customer.setEmail(rs.getString("email"));
+                customer.setMobileNumber(rs.getString("mobile_number"));
+                customer.setCustomerType(rs.getString("customer_type"));
+                customer.setAddress(rs.getString("address"));
+                customer.setCity(rs.getString("city"));
+                customer.setIdentityStatus(rs.getString("identity_status"));
+                customer.setAccountStatus(rs.getString("account_status"));
+                customer.setRegistrationDate(rs.getTimestamp("registration_date"));
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching customer by ID: " + e.getMessage());
+        }
+
+        return customer;
+    }
+
     public boolean updatePassword(String email, String newPassword) {
         String query = "UPDATE customer SET password = ? WHERE email = ?";
         try (Connection conn = DBConnection.getConnection();

@@ -1,9 +1,14 @@
 package com.amdocs.telecom.main;
 
 import com.amdocs.telecom.dao.*;
+import com.amdocs.telecom.exception.CustomerNotEligibleException;
+import com.amdocs.telecom.exception.DuplicateOrderException;
+import com.amdocs.telecom.exception.InvalidOrderException;
+import com.amdocs.telecom.exception.ProductUnavailableException;
 import com.amdocs.telecom.model.Customer;
 import com.amdocs.telecom.model.FieldEngineer;
 import com.amdocs.telecom.model.TelecomProduct;
+import com.amdocs.telecom.service.OrderValidationService;
 import com.amdocs.telecom.service.ProvisioningService;
 import com.amdocs.telecom.util.CaptchaGenerator;
 import com.amdocs.telecom.util.DBConnection;
@@ -299,7 +304,7 @@ public class MainApp {
     }
 
    
-        private static void placeOrderWorkflow(int customerId) {
+       private static void placeOrderWorkflow(int customerId) {
         printHeader("PLACE TELECOM ORDER");
         try {
             printProductTable();
@@ -307,6 +312,7 @@ public class MainApp {
             System.out.print("\nEnter Product Code to order (e.g., PROD1001): ");
             String productCode = scanner.nextLine().trim();
 
+            // 1. Fetch Product
             TelecomProduct selectedProduct = productDAO.getProductByCode(productCode);
             if (selectedProduct == null) {
                 System.out.println("\n[X] Invalid Product Code. Order canceled.");
@@ -321,20 +327,22 @@ public class MainApp {
             System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
             String paymentMode = scanner.nextLine().trim().toUpperCase();
 
-            PaymentProcessor processor = PaymentFactory.getProcessor(paymentMode);
-            if (processor == null) {
-                System.out.println("\n[X] Invalid Payment Mode. Must be UPI, CARD, or NET_BANKING.");
-                System.out.print("\nPress Enter to return to menu...");
-                scanner.nextLine();
-                return;
-            }
-            processor.process(price);
+            // 2. Section 7 Validations (Customer, Product, Documents, Eligibility)
+            Customer customer = customerDAO.getCustomerById(customerId);
+            OrderValidationService validator = new OrderValidationService();
+            validator.validateOrder(customer, selectedProduct, paymentMode);
 
-            // Returns the database-generated Order ID (e.g., 8)
+            // 3. Payment Processing via Factory Pattern
+            PaymentProcessor processor = PaymentFactory.getProcessor(paymentMode);
+            if (processor != null) {
+                processor.process(price);
+            }
+
+            // 4. Place Order Transaction
             long newOrderId = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
 
             if (newOrderId > 0) {
-                // 1. Dispatch technician for on-site services
+                // Auto-dispatch field engineer if on-site installation is required
                 if (productCode.startsWith("PROD2") || productCode.startsWith("PROD3")) {
                     System.out.println("\n[!] Service requires on-site installation. Dispatching field engineer...");
                     Optional<FieldEngineer> assigned = engineerDAO.assignLeastBusyEngineer("Bangalore");
@@ -344,16 +352,20 @@ public class MainApp {
                     });
                 }
 
-                // 2. Submit task to the background ExecutorService thread pool
+                // Dispatched to background thread pool for simulated activation
                 System.out.println("[*] Provisioning request dispatched to background worker pool...");
                 provisioningService.triggerAsyncProvisioning(newOrderId);
-
             } else {
                 System.out.println("\n[X] Order creation failed.");
             }
+
+        } catch (CustomerNotEligibleException | ProductUnavailableException | 
+                 DuplicateOrderException | InvalidOrderException e) {
+            System.out.println("\n[VALIDATION REJECTED] " + e.getMessage());
         } catch (NumberFormatException e) {
-            System.out.println("\n[X] Invalid input format. Please enter valid numbers.");
+            System.out.println("\n[X] Invalid input format. Please enter numbers where required.");
         }
+
         System.out.print("\nPress Enter to return to menu...");
         scanner.nextLine();
     }
