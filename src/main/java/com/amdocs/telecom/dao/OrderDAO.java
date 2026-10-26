@@ -7,7 +7,7 @@ public class OrderDAO {
 
     
     public long placeOrder(int customerId, String productCode, double amount, String paymentMode) {
-        String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_status, total_amount) VALUES (?, ?, 'CONFIRMED', ?)";
+        String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_type, order_status, total_amount) VALUES (?, ?, ?, 'CONFIRMED', ?)";
         String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price) SELECT ?, product_id, 1, ? FROM telecom_product WHERE product_code = ?";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
         String provisioningQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
@@ -24,12 +24,23 @@ public class OrderDAO {
         try {
             conn.setAutoCommit(false);
 
+            // Determine Section 5 Order Type BEFORE executing the statement
+            String orderType = "NEW_CONNECTION";
+            if (productCode.startsWith("PROD2")) {
+                orderType = "BROADBAND";
+            } else if (productCode.startsWith("PROD3")) {
+                orderType = "ENTERPRISE";
+            } else if (productCode.contains("ESIM")) {
+                orderType = "ESIM_ACTIVATION";
+            }
+
             // 1. Insert Order & retrieve generated order_id
             long generatedOrderId = -1;
             try (PreparedStatement orderStmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                 orderStmt.setString(1, orderNumber);
                 orderStmt.setInt(2, customerId);
-                orderStmt.setDouble(3, amount);
+                orderStmt.setString(3, orderType);    // <--- Correctly sets parameter #3 (order_type)
+                orderStmt.setDouble(4, amount);       // <--- Correctly sets parameter #4 (total_amount)
                 orderStmt.executeUpdate();
 
                 ResultSet rs = orderStmt.getGeneratedKeys();
@@ -58,33 +69,41 @@ public class OrderDAO {
                 payStmt.executeUpdate();
             }
 
-            // 4. Determine Hardware Requirement
+            // 4. Determine Hardware Requirement & Section 10 Provisioning Type
             String requiredItemType = "SIM";
+            String provisioningType = "MOBILE_SERVICE"; // Default Section 10 provisioning type
+
             try (PreparedStatement pTypeStmt = conn.prepareStatement(productTypeQuery)) {
                 pTypeStmt.setString(1, productCode);
                 ResultSet rs = pTypeStmt.executeQuery();
                 if (rs.next()) {
                     String pType = rs.getString("product_type");
+
                     if ("BROADBAND".equalsIgnoreCase(pType)) {
                         requiredItemType = "ROUTER";
+                        provisioningType = "BROADBAND";
                     } else if ("ENTERPRISE".equalsIgnoreCase(pType)) {
                         requiredItemType = "ONT";
+                        provisioningType = "VPN";
+                    } else if (productCode.contains("5G")) {
+                        provisioningType = "5G_SERVICE";
                     }
                 }
             }
 
-            // 5. Create Network Provisioning Ticket
+            // 5. Create Network Provisioning Ticket (Mapped to Section 10 Provisioning Type)
             try (PreparedStatement provStmt = conn.prepareStatement(provisioningQuery)) {
                 provStmt.setLong(1, generatedOrderId);
-                provStmt.setString(2, requiredItemType);
+                provStmt.setString(2, provisioningType); // <--- Stores 'BROADBAND', '5G_SERVICE', or 'VPN'
                 provStmt.executeUpdate();
-                System.out.printf("[✔] Network Engine: Provisioning ticket generated (PENDING) for Order #%d\n", generatedOrderId);
+                System.out.printf("[✔] Network Engine: Provisioning ticket generated (%s - PENDING) for Order #%d\n", 
+                    provisioningType, generatedOrderId);
             }
 
-            // 6. Reserve Hardware
+            // 6. Reserve Hardware in Warehouse
             try (PreparedStatement invStmt = conn.prepareStatement(reserveInventoryQuery)) {
                 invStmt.setLong(1, generatedOrderId);
-                invStmt.setString(2, requiredItemType);
+                invStmt.setString(2, requiredItemType); // <--- Still reserves 'ROUTER', 'SIM', or 'ONT'
                 int rowsUpdated = invStmt.executeUpdate();
                 if (rowsUpdated > 0) {
                     System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", requiredItemType, generatedOrderId);
@@ -92,7 +111,7 @@ public class OrderDAO {
                     System.out.printf("[!] Inventory Notice: No available %s in stock. Order placed on backorder.\n", requiredItemType);
                 }
             }
-
+      
             conn.commit();
             System.out.println("[✔] Order Placed Successfully! Order Number: " + orderNumber);
             return generatedOrderId; // Returns the valid Order ID (e.g., 7 or 8)

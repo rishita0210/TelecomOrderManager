@@ -6,6 +6,7 @@ com/amdocs/telecom/util/OTPService.class
 com/amdocs/telecom/util/PaymentFactory.class
 com/amdocs/telecom/dao/OrderDAO.class
 com/amdocs/telecom/model/InventoryItem.class
+com/amdocs/telecom/model/TelecomOrder.class
 com/amdocs/telecom/model/TelecomProduct.class
 com/amdocs/telecom/service/ProvisioningService.class
 com/amdocs/telecom/exception/InvalidOrderException.class
