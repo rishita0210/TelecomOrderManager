@@ -332,69 +332,72 @@ public class MainApp {
 
    
        private static void placeOrderWorkflow(int customerId) {
-        printHeader("PLACE TELECOM ORDER");
-        try {
-            printProductTable();
+        printHeader("PLACE TELECOM ORDER (MULTI-ITEM CART)");
+        browseProducts();
 
-            System.out.print("\nEnter Product Code to order (e.g., PROD1001): ");
+        java.util.List<com.amdocs.telecom.model.OrderItem> cartItems = new java.util.ArrayList<>();
+        java.util.List<String> productCodes = new java.util.ArrayList<>();
+        double grandTotal = 0.0;
+
+        boolean addingMore = true;
+        while (addingMore) {
+            System.out.print("\nEnter Product Code to add to cart (e.g., PROD1001): ");
             String productCode = scanner.nextLine().trim();
 
-            // 1. Fetch Product
-            TelecomProduct selectedProduct = productDAO.getProductByCode(productCode);
-            if (selectedProduct == null) {
-                System.out.println("\n[X] Invalid Product Code. Order canceled.");
-                System.out.print("\nPress Enter to return to menu...");
-                scanner.nextLine();
-                return;
-            }
-
-            double price = selectedProduct.getMonthlyPrice();
-            System.out.printf("Selected: %s | Amount Due: $%.2f\n", selectedProduct.getProductName(), price);
-
-            System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
-            String paymentMode = scanner.nextLine().trim().toUpperCase();
-
-            // 2. Section 7 Validations (Customer, Product, Documents, Eligibility)
-            Customer customer = customerDAO.getCustomerById(customerId);
-            OrderValidationService validator = new OrderValidationService();
-            validator.validateOrder(customer, selectedProduct, paymentMode);
-
-            // 3. Payment Processing via Factory Pattern
-            PaymentProcessor processor = PaymentFactory.getProcessor(paymentMode);
-            if (processor != null) {
-                processor.process(price);
-            }
-
-            // 4. Place Order Transaction
-            long newOrderId = orderDAO.placeOrder(customerId, productCode, price, paymentMode);
-
-            if (newOrderId > 0) {
-                // Auto-dispatch field engineer if on-site installation is required
-                if (productCode.startsWith("PROD2") || productCode.startsWith("PROD3")) {
-                    System.out.println("\n[!] Service requires on-site installation. Dispatching field engineer...");
-                    Optional<FieldEngineer> assigned = engineerDAO.assignLeastBusyEngineer("Bangalore");
-                    assigned.ifPresent(eng -> {
-                        System.out.printf("[✔] Technician Assigned: %s (Current active load: %d tasks)\n", 
-                            eng.getEngineerName(), eng.getActiveTasks() + 1);
-                    });
+            com.amdocs.telecom.model.TelecomProduct product = productDAO.getProductByCode(productCode);
+            if (product == null) {
+                System.out.println("[X] Product not found! Please check the code.");
+            } else {
+                System.out.print("Enter Quantity (e.g., 1): ");
+                int qty = 1;
+                try {
+                    qty = Integer.parseInt(scanner.nextLine().trim());
+                    if (qty <= 0) qty = 1;
+                } catch (NumberFormatException e) {
+                    qty = 1;
                 }
 
-                // Dispatched to background thread pool for simulated activation
-                System.out.println("[*] Provisioning request dispatched to background worker pool...");
-                provisioningService.triggerAsyncProvisioning(newOrderId);
-            } else {
-                System.out.println("\n[X] Order creation failed.");
+                double unitPrice = product.getMonthlyPrice();
+                double discount = 0.00;
+                double tax = Math.round((unitPrice * qty * 0.18) * 100.0) / 100.0; // 18% Tax
+                double lineTotal = (unitPrice * qty) - discount + tax;
+
+                com.amdocs.telecom.model.OrderItem item = new com.amdocs.telecom.model.OrderItem(
+                    product.getProductId(), qty, unitPrice, discount, tax
+                );
+                cartItems.add(item);
+                productCodes.add(productCode);
+                grandTotal += lineTotal;
+
+                System.out.printf("[+] Added %d × %s (Line Total with 18%% tax: $%.2f)\n", qty, product.getProductName(), lineTotal);
             }
 
-        } catch (CustomerNotEligibleException | ProductUnavailableException | 
-                 DuplicateOrderException | InvalidOrderException e) {
-            System.out.println("\n[VALIDATION REJECTED] " + e.getMessage());
-        } catch (NumberFormatException e) {
-            System.out.println("\n[X] Invalid input format. Please enter numbers where required.");
+            System.out.print("Would you like to add another product to this order? (Y/N): ");
+            String ans = scanner.nextLine().trim();
+            if (!"Y".equalsIgnoreCase(ans)) {
+                addingMore = false;
+            }
         }
 
-        System.out.print("\nPress Enter to return to menu...");
-        scanner.nextLine();
+        if (cartItems.isEmpty()) {
+            System.out.println("\n[!] Cart is empty. Order aborted.");
+            return;
+        }
+
+        System.out.printf("\n================ CART SUMMARY ================\n");
+        System.out.printf("Total Line Items: %d\n", cartItems.size());
+        System.out.printf("Grand Total (inc. Tax): $%.2f\n", grandTotal);
+        System.out.println("==============================================");
+
+        System.out.print("Enter Payment Mode (UPI / CARD / NET_BANKING): ");
+        String paymentMode = scanner.nextLine().trim().toUpperCase();
+
+        boolean success = orderDAO.placeMultiItemOrder(customerId, cartItems, productCodes, grandTotal, paymentMode);
+        if (success) {
+            System.out.println("[*] Provisioning request dispatched to background worker pool...");
+        } else {
+            System.out.println("\n[X] Order placement failed.");
+        }
     }
 
     private static void trackAndActivateOrder() {
@@ -446,12 +449,21 @@ public class MainApp {
     // =========================================================================
     // ADMINISTRATOR PORTAL & DASHBOARD (Section 16 Implementation)
     // =========================================================================
+    // =========================================================================
+    // SECTION 16: ADMINISTRATOR DASHBOARD WITH RBAC
+    // =========================================================================
+    // =========================================================================
+    // SECTION 16: ADMINISTRATOR DASHBOARD WITH RBAC
+    // =========================================================================
     private static void handleAdminPortal() {
-        // Log access by the Administrator
-        LoginHistoryDAO.recordLoginAttempt("admin@telecom.local", "ORDER_ADMIN", "SUCCESS", null);
+        // 1. Authenticate FIRST before granting access or starting the menu loop
+        if (!authenticateStaffRole("ORDER_ADMIN", "Admin@123")) {
+            return;
+        }
 
-        boolean back = false;
-        while (!back) {
+        // 2. Dashboard Loop: Runs smoothly without asking for the password again
+        boolean logout = false;
+        while (!logout) {
             printHeader("ORDER ADMINISTRATOR DASHBOARD");
             System.out.println("1. Customer Management (Active Accounts & Profiles)");
             System.out.println("2. Product Management (Catalogue & Pricing)");
@@ -469,58 +481,50 @@ public class MainApp {
 
             switch (choice) {
                 case "1":
-                    printHeader("CUSTOMER MANAGEMENT");
-                    displayAllCustomers();
-                    pauseForUser();
+                    adminService.displayAllCustomers();
+                    pauseForAdmin();
                     break;
 
                 case "2":
-                    browseProducts();
+                    handleProductManagementSubMenu();
                     break;
 
                 case "3":
-                    printHeader("ORDER MANAGEMENT");
-                    reportDAO.displaySystemAnalytics();
-                    pauseForUser();
+                    adminService.displayAllOrders();
+                    pauseForAdmin();
                     break;
 
                 case "4":
-                    printHeader("INVENTORY MANAGEMENT & AUDIT");
-                    reportDAO.displaySystemAnalytics();
-                    pauseForUser();
+                    adminService.displayFullInventory();
+                    pauseForAdmin();
                     break;
 
                 case "5":
-                    printHeader("PROVISIONING MANAGEMENT");
-                    trackAndActivateOrder();
+                    adminService.displayProvisioningRequests();
+                    pauseForAdmin();
                     break;
 
                 case "6":
-                    printHeader("PAYMENT AUDIT TRAIL");
-                    displayPaymentAuditTrail();
-                    pauseForUser();
+                    adminService.displayPaymentTransactions();
+                    pauseForAdmin();
                     break;
 
                 case "7":
-                    printHeader("FAILED / CANCELLED ORDERS");
-                    displayCancelledOrders();
-                    pauseForUser();
+                    adminService.displayFailedOrders();
+                    pauseForAdmin();
                     break;
 
                 case "8":
-                    // Section 2: Persistent Login History Audit Trail
                     LoginHistoryDAO.displayRecentLogins();
-                    pauseForUser();
+                    pauseForAdmin();
                     break;
 
                 case "9":
-                    printHeader("REPORTS & EXPORT");
-                    exportOrdersWorkflow();
-                    pauseForUser();
+                    handleReportsSubMenu();
                     break;
 
                 case "10":
-                    back = true;
+                    logout = true;
                     System.out.println("\n[✔] Administrator logged out successfully.");
                     break;
 
@@ -528,101 +532,6 @@ public class MainApp {
                     System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 10.");
             }
         }
-    }
-
-    // --- Helper Methods Supporting Admin Dashboard ---
-
-    private static void displayAllCustomers() {
-        String query = "SELECT customer_id, customer_number, customer_name, email, mobile_number, customer_type, account_status FROM customer";
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = pstmt.executeQuery()) {
-            
-            System.out.printf("%-6s | %-12s | %-18s | %-22s | %-12s | %-12s | %-10s\n", 
-                "ID", "Cust No", "Name", "Email", "Mobile", "Type", "Status");
-            System.out.println("---------------------------------------------------------------------------------------------------------");
-            while (rs.next()) {
-                System.out.printf("%-6d | %-12s | %-18s | %-22s | %-12s | %-12s | %-10s\n",
-                    rs.getInt("customer_id"),
-                    rs.getString("customer_number"),
-                    rs.getString("customer_name"),
-                    rs.getString("email"),
-                    rs.getString("mobile_number"),
-                    rs.getString("customer_type"),
-                    rs.getString("account_status")
-                );
-            }
-        } catch (SQLException e) {
-            System.err.println("Error fetching customer data: " + e.getMessage());
-        }
-    }
-
-    private static void displayPaymentAuditTrail() {
-        String query = "SELECT payment_id, order_id, transaction_reference, amount, payment_mode, payment_status, payment_date FROM order_payment ORDER BY payment_id DESC LIMIT 10";
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = pstmt.executeQuery()) {
-            
-            System.out.printf("%-6s | %-8s | %-22s | %-10s | %-12s | %-10s | %-20s\n", 
-                "ID", "Order ID", "Txn Ref", "Amount ($)", "Mode", "Status", "Date");
-            System.out.println("---------------------------------------------------------------------------------------------------");
-            while (rs.next()) {
-                System.out.printf("%-6d | %-8d | %-22s | $%-9.2f | %-12s | %-10s | %-20s\n",
-                    rs.getInt("payment_id"),
-                    rs.getInt("order_id"),
-                    rs.getString("transaction_reference"),
-                    rs.getDouble("amount"),
-                    rs.getString("payment_mode"),
-                    rs.getString("payment_status"),
-                    rs.getTimestamp("payment_date").toString()
-                );
-            }
-        } catch (SQLException e) {
-            System.err.println("Error querying payments: " + e.getMessage());
-        }
-    }
-
-    private static void displayCancelledOrders() {
-        String query = "SELECT order_id, order_number, customer_id, total_amount, order_date FROM telecom_order WHERE order_status = 'CANCELLED'";
-        try (Connection conn = DBConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(query);
-             ResultSet rs = pstmt.executeQuery()) {
-            
-            System.out.printf("%-8s | %-20s | %-12s | %-12s | %-20s\n", 
-                "Order ID", "Order Number", "Customer ID", "Amount ($)", "Order Date");
-            System.out.println("--------------------------------------------------------------------------------");
-            boolean found = false;
-            while (rs.next()) {
-                found = true;
-                System.out.printf("%-8d | %-20s | %-12d | $%-11.2f | %-20s\n",
-                    rs.getInt("order_id"),
-                    rs.getString("order_number"),
-                    rs.getInt("customer_id"),
-                    rs.getDouble("total_amount"),
-                    rs.getTimestamp("order_date").toString()
-                );
-            }
-            if (!found) {
-                System.out.println("No cancelled or failed orders found in database.");
-            }
-        } catch (SQLException e) {
-            System.err.println("Error querying cancelled orders: " + e.getMessage());
-        }
-    }
-
-    private static void exportOrdersWorkflow() {
-        String fileName = "orders_report.csv";
-        boolean success = reportDAO.exportOrdersToCSV(fileName);
-        if (success) {
-            System.out.println("\n[✔] SUCCESS: Report exported successfully as " + fileName);
-        } else {
-            System.out.println("\n[X] Export failed.");
-        }
-    }
-
-    private static void pauseForUser() {
-        System.out.print("\nPress Enter to return to menu...");
-        scanner.nextLine();
     }
 
     private static void handleProductManagementSubMenu() {
@@ -685,23 +594,217 @@ public class MainApp {
         }
     }
 
-    private static void pauseForAdmin() {
-        System.out.print("\nPress Enter to return to Administrator Dashboard...");
+    private static void exportOrdersWorkflow() {
+        printHeader("EXPORT REPORT TO CSV");
+        String fileName = "orders_report.csv";
+        boolean success = reportDAO.exportOrdersToCSV(fileName);
+        if (success) {
+            System.out.println("\n[✔] SUCCESS: Report exported successfully as " + fileName);
+        } else {
+            System.out.println("\n[X] Export failed.");
+        }
+        pauseForAdmin();
+    }
+
+    // =========================================================================
+    // ROLE 2: PROVISIONING ENGINEER PORTAL
+    // =========================================================================
+    private static void handleProvisioningEngineerPortal() {
+        if (!authenticateStaffRole("PROVISIONING_ENGINEER", "Eng@123")) {
+            return;
+        }
+
+        boolean logout = false;
+        while (!logout) {
+            printHeader("PROVISIONING ENGINEER PORTAL");
+            System.out.println("Role: Field Operations / Network Element Engineer");
+            System.out.println("Active Node Gateway: NODE-AMDOCS-CORE-01");
+            System.out.println("--------------------------------------------------");
+            System.out.println("1. View All Provisioning Tickets (Active & Pending)");
+            System.out.println("2. Activate / Complete Provisioning for Order");
+            System.out.println("3. View Field Engineer Workload & Assignments");
+            System.out.println("4. Logout to Main Menu");
+            System.out.print("Enter your choice (1-4): ");
+
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1":
+                    adminService.displayProvisioningRequests();
+                    pauseForEngineer();
+                    break;
+
+                case "2":
+                    trackAndActivateOrder();
+                    break;
+
+                case "3":
+                    analyticsService.printEngineerWorkload();
+                    pauseForEngineer();
+                    break;
+
+                case "4":
+                    logout = true;
+                    System.out.println("\n[✔] Provisioning Engineer logged out successfully.");
+                    break;
+
+                default:
+                    System.out.println("\n[!] Invalid choice. Please enter 1, 2, 3, or 4.");
+            }
+        }
+    }
+
+    private static void pauseForEngineer() {
+        System.out.print("\nPress Enter to return to Provisioning Portal...");
         scanner.nextLine();
     }
 
-    private static void handleProvisioningEngineerPortal() {
-        printHeader("PROVISIONING ENGINEER PORTAL");
-        System.out.println("Role: Field Technician / Network Engineer");
-        System.out.println("Status: Active connections monitored via OLT-NODE-01");
-        trackAndActivateOrder();
+    // =========================================================================
+    // ROLE 3: INVENTORY ADMINISTRATOR PORTAL
+    // =========================================================================
+    private static void handleInventoryAdminPortal() {
+        if (!authenticateStaffRole("INVENTORY_ADMIN", "Inv@123")) {
+            return;
+        }
+
+        boolean logout = false;
+        while (!logout) {
+            printHeader("INVENTORY ADMINISTRATOR PORTAL");
+            System.out.println("Role: Warehouse & Hardware Inventory Manager");
+            System.out.println("Managed Hubs: Bangalore Central, Mumbai Depot");
+            System.out.println("--------------------------------------------------");
+            System.out.println("1. Stock Audit Summary (Aggregate Available vs Reserved)");
+            System.out.println("2. Check Low-Stock Threshold Alerts");
+            System.out.println("3. View All Physical Serialized Units");
+            System.out.println("4. Restock / Add New Hardware to Inventory");
+            System.out.println("5. Logout to Main Menu");
+            System.out.print("Enter your choice (1-5): ");
+
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1":
+                    printHeader("WAREHOUSE AGGREGATE AUDIT");
+                    reportDAO.displaySystemAnalytics();
+                    pauseForInventoryAdmin();
+                    break;
+
+                case "2":
+                    checkLowStockAlerts();
+                    pauseForInventoryAdmin();
+                    break;
+
+                case "3":
+                    adminService.displayFullInventory();
+                    pauseForInventoryAdmin();
+                    break;
+
+                case "4":
+                    addNewInventoryItemWorkflow();
+                    pauseForInventoryAdmin();
+                    break;
+
+                case "5":
+                    logout = true;
+                    System.out.println("\n[✔] Inventory Administrator logged out successfully.");
+                    break;
+
+                default:
+                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 5.");
+            }
+        }
     }
 
-    private static void handleInventoryAdminPortal() {
-        printHeader("INVENTORY ADMINISTRATOR PORTAL");
-        System.out.println("Warehouse Stock Status:");
-        reportDAO.displaySystemAnalytics();
-        System.out.print("\nPress Enter to return to main menu...");
+    // Helper: Check for any hardware types running critically low (<= 1 available)
+    private static void checkLowStockAlerts() {
+        printHeader("LOW-STOCK THRESHOLD ALERTS");
+        String query = "SELECT item_type, COUNT(*) AS available_count " +
+                       "FROM inventory_item " +
+                       "WHERE status = 'AVAILABLE' " +
+                       "GROUP BY item_type";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query);
+             ResultSet rs = pstmt.executeQuery()) {
+
+            boolean alertFound = false;
+            while (rs.next()) {
+                String type = rs.getString("item_type");
+                int count = rs.getInt("available_count");
+                if (count <= 1) {
+                    alertFound = true;
+                    System.out.printf("[CRITICAL ALERT] %-10s stock is dangerously low! Only %d unit(s) available.\n", type, count);
+                } else {
+                    System.out.printf("[HEALTHY]        %-10s stock level is sufficient (%d units available).\n", type, count);
+                }
+            }
+
+            if (!alertFound) {
+                System.out.println("\n[✔] All inventory categories meet safety stock thresholds.");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error running stock threshold check: " + e.getMessage());
+        }
+    }
+
+    // Helper: Add new hardware directly from the console
+    private static void addNewInventoryItemWorkflow() {
+        printHeader("RESTOCK WAREHOUSE HARDWARE");
+        try {
+            System.out.print("Enter Item Code (e.g., RTR-998811): ");
+            String itemCode = scanner.nextLine().trim();
+
+            System.out.print("Enter Item Type (SIM / ESIM / ROUTER / ONT): ");
+            String itemType = scanner.nextLine().trim().toUpperCase();
+
+            System.out.print("Enter Hardware Serial Number: ");
+            String serialNo = scanner.nextLine().trim();
+
+            System.out.print("Enter Warehouse Location (e.g., Bangalore Central): ");
+            String warehouse = scanner.nextLine().trim();
+
+            String query = "INSERT INTO inventory_item (item_code, item_type, serial_number, warehouse, status) VALUES (?, ?, ?, ?, 'AVAILABLE')";
+            try (Connection conn = DBConnection.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(query)) {
+                pstmt.setString(1, itemCode);
+                pstmt.setString(2, itemType);
+                pstmt.setString(3, serialNo);
+                pstmt.setString(4, warehouse.isEmpty() ? "Bangalore Central" : warehouse);
+                
+                int rows = pstmt.executeUpdate();
+                if (rows > 0) {
+                    System.out.printf("\n[✔] SUCCESS: Hardware [%s - %s] added to %s as AVAILABLE.\n", itemType, itemCode, warehouse);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("\n[X] Restocking failed: " + e.getMessage());
+        }
+    }
+
+    private static void pauseForInventoryAdmin() {
+        System.out.print("\nPress Enter to return to Inventory Portal...");
+        scanner.nextLine();
+    }
+
+    // Role-based credential check (Declared ONCE)
+    private static boolean authenticateStaffRole(String requiredRole, String expectedSecret) {
+        printHeader("STAFF AUTHENTICATION: " + requiredRole);
+        System.out.printf("Access to this portal requires authorized %s credentials.\n", requiredRole);
+        System.out.print("Enter Staff Passcode: ");
+        String entered = scanner.nextLine().trim();
+
+        if (expectedSecret.equals(entered)) {
+            System.out.println("[✔] Authorization Granted. Accessing restricted portal...");
+            LoginHistoryDAO.recordLoginAttempt(requiredRole.toLowerCase() + "@telecom.local", requiredRole, "SUCCESS", null);
+            return true;
+        } else {
+            System.out.println("\n[X] ACCESS DENIED: Unauthorized credentials. Incident logged.");
+            LoginHistoryDAO.recordLoginAttempt("UNAUTHORIZED_ATTEMPT", requiredRole, "FAILED", "INVALID_STAFF_SECRET");
+            return false;
+        }
+    }
+
+    private static void pauseForAdmin() {
+        System.out.print("\nPress Enter to return to Administrator Dashboard...");
         scanner.nextLine();
     }
 

@@ -8,7 +8,9 @@ public class OrderDAO {
     
     public long placeOrder(int customerId, String productCode, double amount, String paymentMode) {
         String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_type, order_status, total_amount) VALUES (?, ?, ?, 'CONFIRMED', ?)";
-        String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price) SELECT ?, product_id, 1, ? FROM telecom_product WHERE product_code = ?";
+        String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price, discount, tax, total_amount) " +
+                   "SELECT ?, product_id, 1, ?, 0.00, ROUND(? * 0.18, 2), ROUND(? * 1.18, 2) " +
+                   "FROM telecom_product WHERE product_code = ?";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
         String provisioningQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
         String productTypeQuery = "SELECT product_type FROM telecom_product WHERE product_code = ?";
@@ -55,8 +57,10 @@ public class OrderDAO {
             // 2. Insert Order Item
             try (PreparedStatement itemStmt = conn.prepareStatement(itemQuery)) {
                 itemStmt.setLong(1, generatedOrderId);
-                itemStmt.setDouble(2, amount);
-                itemStmt.setString(3, productCode);
+                itemStmt.setDouble(2, amount); // unit_price
+                itemStmt.setDouble(3, amount); // tax calculation (18%)
+                itemStmt.setDouble(4, amount); // total line item amount with tax
+                itemStmt.setString(5, productCode);
                 itemStmt.executeUpdate();
             }
 
@@ -186,6 +190,114 @@ public class OrderDAO {
         } catch (SQLException e) {
             try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
             System.err.println("[X] Cancellation failed, rolled back: " + e.getMessage());
+            return false;
+        } finally {
+            try { conn.setAutoCommit(true); } catch (SQLException ex) { ex.printStackTrace(); }
+        }
+    }
+
+    public boolean placeMultiItemOrder(int customerId, java.util.List<com.amdocs.telecom.model.OrderItem> cartItems, 
+                                       java.util.List<String> productCodes, double grandTotal, String paymentMode) {
+        String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_type, order_status, total_amount) VALUES (?, ?, ?, 'CONFIRMED', ?)";
+        String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price, discount, tax, total_amount) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
+        String provQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
+        String reserveInvQuery = "UPDATE inventory_item SET status = 'RESERVED', assigned_order_id = ? WHERE item_type = ? AND status = 'AVAILABLE' LIMIT 1";
+
+        String orderNumber = "ORD-" + System.currentTimeMillis();
+        String txRef = "TXN-" + System.currentTimeMillis();
+
+        Connection conn = DBConnection.getConnection();
+        if (conn == null) return false;
+
+        try {
+            conn.setAutoCommit(false);
+
+            // 1. Determine dominant Order Type
+            String orderType = "NEW_CONNECTION";
+            if (productCodes.stream().anyMatch(c -> c.startsWith("PROD2"))) {
+                orderType = "BROADBAND";
+            } else if (productCodes.stream().anyMatch(c -> c.startsWith("PROD3"))) {
+                orderType = "ENTERPRISE";
+            } else if (productCodes.stream().anyMatch(c -> c.contains("ESIM"))) {
+                orderType = "ESIM_ACTIVATION";
+            }
+
+            // 2. Insert Order Header
+            long generatedOrderId = -1;
+            try (PreparedStatement orderStmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
+                orderStmt.setString(1, orderNumber);
+                orderStmt.setInt(2, customerId);
+                orderStmt.setString(3, orderType);
+                orderStmt.setDouble(4, grandTotal);
+                orderStmt.executeUpdate();
+
+                ResultSet rs = orderStmt.getGeneratedKeys();
+                if (rs.next()) {
+                    generatedOrderId = rs.getLong(1);
+                } else {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            // 3. Insert All Line Items
+            try (PreparedStatement itemStmt = conn.prepareStatement(itemQuery)) {
+                for (com.amdocs.telecom.model.OrderItem item : cartItems) {
+                    itemStmt.setLong(1, generatedOrderId);
+                    itemStmt.setInt(2, item.getProductId());
+                    itemStmt.setInt(3, item.getQuantity());
+                    itemStmt.setDouble(4, item.getUnitPrice());
+                    itemStmt.setDouble(5, item.getDiscount());
+                    itemStmt.setDouble(6, item.getTax());
+                    itemStmt.setDouble(7, item.getTotalAmount());
+                    itemStmt.addBatch();
+                }
+                itemStmt.executeBatch();
+            }
+
+            // 4. Record Payment
+            try (PreparedStatement payStmt = conn.prepareStatement(paymentQuery)) {
+                payStmt.setLong(1, generatedOrderId);
+                payStmt.setString(2, txRef);
+                payStmt.setDouble(3, grandTotal);
+                payStmt.setString(4, paymentMode);
+                payStmt.executeUpdate();
+            }
+
+            // 5. Create Provisioning Request
+            try (PreparedStatement provStmt = conn.prepareStatement(provQuery)) {
+                provStmt.setLong(1, generatedOrderId);
+                provStmt.setString(2, orderType);
+                provStmt.executeUpdate();
+            }
+
+            // 6. Reserve Inventory for each product category
+            for (String code : productCodes) {
+                String reqHardware = "SIM";
+                if (code.startsWith("PROD2")) reqHardware = "ROUTER";
+                else if (code.startsWith("PROD3")) reqHardware = "ONT";
+                else if (code.contains("ESIM")) reqHardware = "ESIM";
+
+                try (PreparedStatement invStmt = conn.prepareStatement(reserveInvQuery)) {
+                    invStmt.setLong(1, generatedOrderId);
+                    invStmt.setString(2, reqHardware);
+                    int updated = invStmt.executeUpdate();
+                    if (updated > 0) {
+                        System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", reqHardware, generatedOrderId);
+                    } else {
+                        System.out.printf("[!] Inventory Notice: %s stock low. Item placed on backorder.\n", reqHardware);
+                    }
+                }
+            }
+
+            conn.commit();
+            System.out.println("\n[✔] Multi-Item Order Placed Successfully! Order Number: " + orderNumber);
+            return true;
+
+        } catch (SQLException e) {
+            try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            System.err.println("[X] Multi-Item Order failed, transaction rolled back: " + e.getMessage());
             return false;
         } finally {
             try { conn.setAutoCommit(true); } catch (SQLException ex) { ex.printStackTrace(); }

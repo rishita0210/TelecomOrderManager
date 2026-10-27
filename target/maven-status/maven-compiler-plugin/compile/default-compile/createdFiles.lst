@@ -11,6 +11,7 @@ com/amdocs/telecom/service/OrderValidationService.class
 com/amdocs/telecom/exception/InventoryUnavailableException.class
 com/amdocs/telecom/exception/ProvisioningException.class
 com/amdocs/telecom/exception/CustomerNotEligibleException.class
+com/amdocs/telecom/model/OrderItem.class
 com/amdocs/telecom/service/AdminService.class
 com/amdocs/telecom/util/PaymentProcessor.class
 com/amdocs/telecom/main/MainApp.class
