@@ -520,26 +520,28 @@ public class MainApp {
     // =========================================================================
     // SECTION 16: ADMINISTRATOR DASHBOARD WITH RBAC
     // =========================================================================
+    
+    // =========================================================================
+    // SECTION 16: ADMINISTRATOR DASHBOARD (10 OPTIONS)
+    // =========================================================================
     private static void handleAdminPortal() {
-        // 1. Authenticate FIRST before granting access or starting the menu loop
         if (!authenticateStaffRole("ORDER_ADMIN", "Admin@123")) {
             return;
         }
 
-        // 2. Dashboard Loop: Runs smoothly without asking for the password again
         boolean logout = false;
         while (!logout) {
-            printHeader("ORDER ADMINISTRATOR DASHBOARD");
-            System.out.println("1. Customer Management (Active Accounts & Profiles)");
-            System.out.println("2. Product Management (Catalogue & Pricing)");
-            System.out.println("3. Order Management (Live Orders & Statuses)");
-            System.out.println("4. Inventory Management (Stock Levels & Low-Stock Alerts)");
-            System.out.println("5. Provisioning Management (Active Network Tickets)");
-            System.out.println("6. Payment Management (Audited Transactions)");
-            System.out.println("7. Failed / Cancelled Orders");
-            System.out.println("8. Security Audit Logs (Login History)");
-            System.out.println("9. Reports & CSV Export");
-            System.out.println("10. Logout to Main Menu");
+            printHeader("ADMINISTRATOR DASHBOARD");
+            System.out.println("1. Customer Management");
+            System.out.println("2. Product Management");
+            System.out.println("3. Order Management");
+            System.out.println("4. Inventory Management");
+            System.out.println("5. Provisioning Management");
+            System.out.println("6. Payment Management");
+            System.out.println("7. Failed Orders");
+            System.out.println("8. Audit Logs");
+            System.out.println("9. Reports (SQL Aggregates, Java 8 Streams & CSV Export)");
+            System.out.println("10. Logout");
             System.out.print("Enter your choice (1-10): ");
 
             String choice = scanner.nextLine().trim();
@@ -549,50 +551,40 @@ public class MainApp {
                     adminService.displayAllCustomers();
                     pauseForAdmin();
                     break;
-
                 case "2":
                     handleProductManagementSubMenu();
                     break;
-
                 case "3":
                     adminService.displayAllOrders();
                     pauseForAdmin();
                     break;
-
                 case "4":
                     adminService.displayFullInventory();
                     pauseForAdmin();
                     break;
-
                 case "5":
                     adminService.displayProvisioningRequests();
                     pauseForAdmin();
                     break;
-
                 case "6":
                     adminService.displayPaymentTransactions();
                     pauseForAdmin();
                     break;
-
                 case "7":
                     adminService.displayFailedOrders();
                     pauseForAdmin();
                     break;
-
                 case "8":
-                    LoginHistoryDAO.displayRecentLogins();
+                    adminService.displayAuditLogs();
                     pauseForAdmin();
                     break;
-
                 case "9":
                     handleReportsSubMenu();
                     break;
-
                 case "10":
                     logout = true;
-                    System.out.println("\n[✔] Administrator logged out successfully.");
+                    System.out.println("\n[✔] Admin session logged out successfully.");
                     break;
-
                 default:
                     System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 10.");
             }
@@ -658,6 +650,13 @@ public class MainApp {
                 break;
         }
     }
+
+    private static void pauseForAdmin() {
+        System.out.print("\nPress Enter to return to Administrator Dashboard...");
+        scanner.nextLine();
+    }
+
+    
 
     private static void exportOrdersWorkflow() {
         printHeader("EXPORT REPORT TO CSV");
@@ -868,10 +867,7 @@ public class MainApp {
         }
     }
 
-    private static void pauseForAdmin() {
-        System.out.print("\nPress Enter to return to Administrator Dashboard...");
-        scanner.nextLine();
-    }
+   
 
     private static void printHeader(String title) {
         System.out.println("\n==================================================");
