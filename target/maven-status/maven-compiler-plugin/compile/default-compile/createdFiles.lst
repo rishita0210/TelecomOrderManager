@@ -2,6 +2,7 @@ com/amdocs/telecom/dao/ProductDAO.class
 com/amdocs/telecom/exception/ProductUnavailableException.class
 com/amdocs/telecom/util/NetBankingPaymentProcessor.class
 com/amdocs/telecom/util/OTPService.class
+com/amdocs/telecom/service/AnalyticsService.class
 com/amdocs/telecom/util/PaymentFactory.class
 com/amdocs/telecom/dao/OrderDAO.class
 com/amdocs/telecom/model/InventoryItem.class
@@ -10,10 +11,13 @@ com/amdocs/telecom/service/OrderValidationService.class
 com/amdocs/telecom/exception/InventoryUnavailableException.class
 com/amdocs/telecom/exception/ProvisioningException.class
 com/amdocs/telecom/exception/CustomerNotEligibleException.class
+com/amdocs/telecom/service/AdminService.class
 com/amdocs/telecom/util/PaymentProcessor.class
 com/amdocs/telecom/main/MainApp.class
+com/amdocs/telecom/service/AnalyticsService$RawInventoryItem.class
 com/amdocs/telecom/dao/InventoryDAO.class
 com/amdocs/telecom/model/Customer.class
+com/amdocs/telecom/dao/LoginHistoryDAO.class
 com/amdocs/telecom/exception/DuplicateOrderException.class
 com/amdocs/telecom/model/TelecomProduct.class
 com/amdocs/telecom/service/ProvisioningService.class
@@ -24,6 +28,7 @@ com/amdocs/telecom/util/UpiPaymentProcessor.class
 com/amdocs/telecom/dao/ReportDAO.class
 com/amdocs/telecom/dao/EngineerDAO.class
 com/amdocs/telecom/util/CaptchaGenerator.class
+com/amdocs/telecom/service/AnalyticsService$RawOrderItem.class
 com/amdocs/telecom/util/CardPaymentProcessor.class
 com/amdocs/telecom/dao/CustomerDAO.class
 com/amdocs/telecom/model/FieldEngineer.class

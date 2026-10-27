@@ -15,9 +15,14 @@ import com.amdocs.telecom.util.DBConnection;
 import com.amdocs.telecom.util.OTPService;
 import com.amdocs.telecom.util.PaymentFactory;
 import com.amdocs.telecom.util.PaymentProcessor;
+import com.amdocs.telecom.service.AnalyticsService;
+import com.amdocs.telecom.service.AdminService;
 
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
@@ -31,6 +36,8 @@ public class MainApp {
     private static final ReportDAO reportDAO = new ReportDAO();
     private static final EngineerDAO engineerDAO = new EngineerDAO();
     private static final ProvisioningService provisioningService = new ProvisioningService();
+    private static final AnalyticsService analyticsService = new AnalyticsService();
+    private static final AdminService adminService = new AdminService();
     
     // Track consecutive failed login attempts for account locking
     private static int failedAttempts = 0;
@@ -129,11 +136,13 @@ public class MainApp {
     // =========================================================================
     // AUTHENTICATION & SECURITY (Page 2: CAPTCHA, OTP, Account Locking)
     // =========================================================================
-    private static void handleCustomerLogin() {
+    
+        private static void handleCustomerLogin() {
         printHeader("CUSTOMER LOGIN & AUTHENTICATION");
 
         if (failedAttempts >= 3) {
             System.out.println("\n[X] ACCOUNT LOCKED: Exceeded maximum 3 failed attempts. Please use Option 6 (Forgot Password) to unlock.");
+            LoginHistoryDAO.recordLoginAttempt("UNKNOWN/LOCKED", "CUSTOMER", "LOCKED", "MAX_ATTEMPTS_EXCEEDED");
             return;
         }
 
@@ -143,7 +152,11 @@ public class MainApp {
         Customer customer = customerDAO.getCustomerByEmail(email);
         if (customer == null) {
             failedAttempts++;
+            LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "FAILED", "USER_NOT_FOUND");
             System.out.printf("\n[X] Authentication failed: User not found. (%d/3 attempts used)\n", failedAttempts);
+            if (failedAttempts >= 3) {
+                LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "LOCKED", "ACCOUNT_LOCKED_3_ATTEMPTS");
+            }
             return;
         }
 
@@ -152,7 +165,11 @@ public class MainApp {
 
         if (!customer.getPassword().equals(password)) {
             failedAttempts++;
+            LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "FAILED", "BAD_PASSWORD");
             System.out.printf("\n[X] Authentication failed: Invalid Password. (%d/3 attempts used)\n", failedAttempts);
+            if (failedAttempts >= 3) {
+                LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "LOCKED", "ACCOUNT_LOCKED_3_ATTEMPTS");
+            }
             return;
         }
 
@@ -164,7 +181,11 @@ public class MainApp {
 
         if (!generatedCaptcha.equals(enteredCaptcha)) {
             failedAttempts++;
+            LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "FAILED", "INVALID_CAPTCHA");
             System.out.printf("\n[X] Security verification failed: Invalid CAPTCHA. (%d/3 attempts used)\n", failedAttempts);
+            if (failedAttempts >= 3) {
+                LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "LOCKED", "ACCOUNT_LOCKED_3_ATTEMPTS");
+            }
             return;
         }
 
@@ -176,12 +197,18 @@ public class MainApp {
 
         if (!generatedOTP.equals(enteredOTP)) {
             failedAttempts++;
+            LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "FAILED", "INVALID_OTP");
             System.out.printf("\n[X] 2FA verification failed: Incorrect OTP. (%d/3 attempts used)\n", failedAttempts);
+            if (failedAttempts >= 3) {
+                LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "LOCKED", "ACCOUNT_LOCKED_3_ATTEMPTS");
+            }
             return;
         }
 
-        // Authentication Successful
+        // Authentication Successful: Reset counter and log SUCCESS
         failedAttempts = 0;
+        LoginHistoryDAO.recordLoginAttempt(email, "CUSTOMER", "SUCCESS", null);
+        
         System.out.printf("\n[✔] Login Successful! Welcome back, %s (Customer ID: %d)\n", 
             customer.getCustomerName(), customer.getCustomerId());
         
@@ -394,44 +421,273 @@ public class MainApp {
     }
 
     // =========================================================================
+    // EXPORT ORDERS WORKFLOW
+    // =========================================================================
+    // private static void exportOrdersWorkflow() {
+    //     printHeader("EXPORT REPORT TO CSV");
+    //     String fileName = "orders_report.csv";
+    //     boolean success = reportDAO.exportOrdersToCSV(fileName);
+    //     if (success) {
+    //         System.out.println("\n[✔] SUCCESS: Report exported successfully as " + fileName);
+    //     } else {
+    //         System.out.println("\n[X] Export failed. Check database connection or file permissions.");
+    //     }
+    //     System.out.print("\nPress Enter to return to menu...");
+    //     scanner.nextLine();
+    // }
+
+    // =========================================================================
     // ADMINISTRATOR & ROLE PORTALS (Page 2: Role-Based Authorization)
     // =========================================================================
+     
+    // =========================================================================
+    // SECTION 16: ADMINISTRATOR DASHBOARD (10 OPTIONS)
+    // =========================================================================
+    // =========================================================================
+    // ADMINISTRATOR PORTAL & DASHBOARD (Section 16 Implementation)
+    // =========================================================================
     private static void handleAdminPortal() {
+        // Log access by the Administrator
+        LoginHistoryDAO.recordLoginAttempt("admin@telecom.local", "ORDER_ADMIN", "SUCCESS", null);
+
         boolean back = false;
         while (!back) {
-            printHeader("ORDER ADMINISTRATOR PORTAL");
-            System.out.println("1. View System Analytics & Inventory Audit");
-            System.out.println("2. Export Orders Report to CSV");
-            System.out.println("3. Back to Main Menu");
-            System.out.print("Enter your choice (1-3): ");
+            printHeader("ORDER ADMINISTRATOR DASHBOARD");
+            System.out.println("1. Customer Management (Active Accounts & Profiles)");
+            System.out.println("2. Product Management (Catalogue & Pricing)");
+            System.out.println("3. Order Management (Live Orders & Statuses)");
+            System.out.println("4. Inventory Management (Stock Levels & Low-Stock Alerts)");
+            System.out.println("5. Provisioning Management (Active Network Tickets)");
+            System.out.println("6. Payment Management (Audited Transactions)");
+            System.out.println("7. Failed / Cancelled Orders");
+            System.out.println("8. Security Audit Logs (Login History)");
+            System.out.println("9. Reports & CSV Export");
+            System.out.println("10. Logout to Main Menu");
+            System.out.print("Enter your choice (1-10): ");
 
             String choice = scanner.nextLine().trim();
+
             switch (choice) {
                 case "1":
-                    printHeader("SYSTEM ANALYTICS & AUDIT");
-                    reportDAO.displaySystemAnalytics();
-                    System.out.print("\nPress Enter to return...");
-                    scanner.nextLine();
+                    printHeader("CUSTOMER MANAGEMENT");
+                    displayAllCustomers();
+                    pauseForUser();
                     break;
+
                 case "2":
-                    printHeader("EXPORT REPORT TO CSV");
-                    String fileName = "orders_report.csv";
-                    boolean success = reportDAO.exportOrdersToCSV(fileName);
-                    if (success) {
-                        System.out.println("[✔] SUCCESS: Report exported successfully as " + fileName);
-                    } else {
-                        System.out.println("[X] Export failed.");
-                    }
-                    System.out.print("\nPress Enter to return...");
-                    scanner.nextLine();
+                    browseProducts();
                     break;
+
                 case "3":
-                    back = true;
+                    printHeader("ORDER MANAGEMENT");
+                    reportDAO.displaySystemAnalytics();
+                    pauseForUser();
                     break;
+
+                case "4":
+                    printHeader("INVENTORY MANAGEMENT & AUDIT");
+                    reportDAO.displaySystemAnalytics();
+                    pauseForUser();
+                    break;
+
+                case "5":
+                    printHeader("PROVISIONING MANAGEMENT");
+                    trackAndActivateOrder();
+                    break;
+
+                case "6":
+                    printHeader("PAYMENT AUDIT TRAIL");
+                    displayPaymentAuditTrail();
+                    pauseForUser();
+                    break;
+
+                case "7":
+                    printHeader("FAILED / CANCELLED ORDERS");
+                    displayCancelledOrders();
+                    pauseForUser();
+                    break;
+
+                case "8":
+                    // Section 2: Persistent Login History Audit Trail
+                    LoginHistoryDAO.displayRecentLogins();
+                    pauseForUser();
+                    break;
+
+                case "9":
+                    printHeader("REPORTS & EXPORT");
+                    exportOrdersWorkflow();
+                    pauseForUser();
+                    break;
+
+                case "10":
+                    back = true;
+                    System.out.println("\n[✔] Administrator logged out successfully.");
+                    break;
+
                 default:
-                    System.out.println("\n[!] Invalid choice.");
+                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 10.");
             }
         }
+    }
+
+    // --- Helper Methods Supporting Admin Dashboard ---
+
+    private static void displayAllCustomers() {
+        String query = "SELECT customer_id, customer_number, customer_name, email, mobile_number, customer_type, account_status FROM customer";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query);
+             ResultSet rs = pstmt.executeQuery()) {
+            
+            System.out.printf("%-6s | %-12s | %-18s | %-22s | %-12s | %-12s | %-10s\n", 
+                "ID", "Cust No", "Name", "Email", "Mobile", "Type", "Status");
+            System.out.println("---------------------------------------------------------------------------------------------------------");
+            while (rs.next()) {
+                System.out.printf("%-6d | %-12s | %-18s | %-22s | %-12s | %-12s | %-10s\n",
+                    rs.getInt("customer_id"),
+                    rs.getString("customer_number"),
+                    rs.getString("customer_name"),
+                    rs.getString("email"),
+                    rs.getString("mobile_number"),
+                    rs.getString("customer_type"),
+                    rs.getString("account_status")
+                );
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching customer data: " + e.getMessage());
+        }
+    }
+
+    private static void displayPaymentAuditTrail() {
+        String query = "SELECT payment_id, order_id, transaction_reference, amount, payment_mode, payment_status, payment_date FROM order_payment ORDER BY payment_id DESC LIMIT 10";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query);
+             ResultSet rs = pstmt.executeQuery()) {
+            
+            System.out.printf("%-6s | %-8s | %-22s | %-10s | %-12s | %-10s | %-20s\n", 
+                "ID", "Order ID", "Txn Ref", "Amount ($)", "Mode", "Status", "Date");
+            System.out.println("---------------------------------------------------------------------------------------------------");
+            while (rs.next()) {
+                System.out.printf("%-6d | %-8d | %-22s | $%-9.2f | %-12s | %-10s | %-20s\n",
+                    rs.getInt("payment_id"),
+                    rs.getInt("order_id"),
+                    rs.getString("transaction_reference"),
+                    rs.getDouble("amount"),
+                    rs.getString("payment_mode"),
+                    rs.getString("payment_status"),
+                    rs.getTimestamp("payment_date").toString()
+                );
+            }
+        } catch (SQLException e) {
+            System.err.println("Error querying payments: " + e.getMessage());
+        }
+    }
+
+    private static void displayCancelledOrders() {
+        String query = "SELECT order_id, order_number, customer_id, total_amount, order_date FROM telecom_order WHERE order_status = 'CANCELLED'";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query);
+             ResultSet rs = pstmt.executeQuery()) {
+            
+            System.out.printf("%-8s | %-20s | %-12s | %-12s | %-20s\n", 
+                "Order ID", "Order Number", "Customer ID", "Amount ($)", "Order Date");
+            System.out.println("--------------------------------------------------------------------------------");
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.printf("%-8d | %-20s | %-12d | $%-11.2f | %-20s\n",
+                    rs.getInt("order_id"),
+                    rs.getString("order_number"),
+                    rs.getInt("customer_id"),
+                    rs.getDouble("total_amount"),
+                    rs.getTimestamp("order_date").toString()
+                );
+            }
+            if (!found) {
+                System.out.println("No cancelled or failed orders found in database.");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error querying cancelled orders: " + e.getMessage());
+        }
+    }
+
+    private static void exportOrdersWorkflow() {
+        String fileName = "orders_report.csv";
+        boolean success = reportDAO.exportOrdersToCSV(fileName);
+        if (success) {
+            System.out.println("\n[✔] SUCCESS: Report exported successfully as " + fileName);
+        } else {
+            System.out.println("\n[X] Export failed.");
+        }
+    }
+
+    private static void pauseForUser() {
+        System.out.print("\nPress Enter to return to menu...");
+        scanner.nextLine();
+    }
+
+    private static void handleProductManagementSubMenu() {
+        printHeader("PRODUCT MANAGEMENT");
+        System.out.println("1. View All Products");
+        System.out.println("2. Add New Telecom Product");
+        System.out.println("3. Back");
+        System.out.print("Enter choice (1-3): ");
+        String sub = scanner.nextLine().trim();
+
+        if ("1".equals(sub)) {
+            browseProducts();
+        } else if ("2".equals(sub)) {
+            try {
+                System.out.print("Enter Product Code (e.g., PROD4001): ");
+                String code = scanner.nextLine().trim();
+                System.out.print("Enter Product Name: ");
+                String name = scanner.nextLine().trim();
+                System.out.print("Enter Product Type (BROADBAND / MOBILE_PLAN / ENTERPRISE): ");
+                String type = scanner.nextLine().trim().toUpperCase();
+                System.out.print("Enter Monthly Price: ");
+                double price = Double.parseDouble(scanner.nextLine().trim());
+
+                boolean ok = adminService.addProduct(code, name, type, price);
+                if (ok) {
+                    System.out.println("\n[✔] Product successfully added to catalog!");
+                } else {
+                    System.out.println("\n[X] Failed to add product (duplicate product code).");
+                }
+            } catch (Exception e) {
+                System.out.println("\n[X] Invalid input: " + e.getMessage());
+            }
+            pauseForAdmin();
+        }
+    }
+
+    private static void handleReportsSubMenu() {
+        printHeader("REPORTS & ANALYTICS");
+        System.out.println("1. View System Analytics (SQL Aggregations)");
+        System.out.println("2. View Advanced Stream Analytics (Java 8 Streams)");
+        System.out.println("3. Export Orders Report to CSV");
+        System.out.println("4. Back");
+        System.out.print("Enter choice (1-4): ");
+        String rChoice = scanner.nextLine().trim();
+
+        switch (rChoice) {
+            case "1":
+                reportDAO.displaySystemAnalytics();
+                pauseForAdmin();
+                break;
+            case "2":
+                analyticsService.runFullStreamAnalytics();
+                pauseForAdmin();
+                break;
+            case "3":
+                exportOrdersWorkflow();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private static void pauseForAdmin() {
+        System.out.print("\nPress Enter to return to Administrator Dashboard...");
+        scanner.nextLine();
     }
 
     private static void handleProvisioningEngineerPortal() {
