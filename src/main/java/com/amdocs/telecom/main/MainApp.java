@@ -100,39 +100,81 @@ public class MainApp {
         boolean logout = false;
         while (!logout) {
             printHeader("CUSTOMER DASHBOARD");
-            System.out.println("1. Browse Telecom Product Catalog");
-            System.out.println("2. Place New Telecom Order");
-            System.out.println("3. Track Order & Activate Service");
-            System.out.println("4. View My Past Orders");
-            System.out.println("5. Logout to Main Menu");
-            System.out.print("Enter your choice (1-5): ");
+            System.out.println("1. View Profile");
+            System.out.println("2. Browse Products");
+            System.out.println("3. Create Order");
+            System.out.println("4. View My Orders");
+            System.out.println("5. Track Order");
+            System.out.println("6. Make Payment");
+            System.out.println("7. View Active Services");
+            System.out.println("8. Cancel Order");
+            System.out.println("9. Notifications");
+            System.out.println("10. Logout");
+            System.out.print("Enter your choice (1-10): ");
 
             String choice = scanner.nextLine().trim();
 
             switch (choice) {
                 case "1":
-                    browseProducts();
+                    customerDAO.displayCustomerProfile(customerId);
+                    pause();
                     break;
                 case "2":
-                    placeOrderWorkflow(customerId);
+                    browseProducts();
                     break;
                 case "3":
-                    trackAndActivateOrder();
+                    placeOrderWorkflow(customerId);
                     break;
                 case "4":
                     orderDAO.displayCustomerOrders(customerId);
-                    System.out.print("\nPress Enter to return...");
-                    scanner.nextLine();
+                    pause();
                     break;
                 case "5":
+                    System.out.print("Enter Order ID to track: ");
+                    try {
+                        long oId = Long.parseLong(scanner.nextLine().trim());
+                        orderDAO.trackOrderVisualPipeline(oId);
+                    } catch (NumberFormatException e) {
+                        System.out.println("[X] Invalid Order ID.");
+                    }
+                    pause();
+                    break;
+                case "6":
+                    System.out.println("\n[INFO] Payment is integrated at checkout (Option 3) via Payment Gateway.");
+                    System.out.println("[✔] All confirmed orders are automatically settled via UPI/Card/NetBanking.");
+                    pause();
+                    break;
+                case "7":
+                    orderDAO.displayActiveServices(customerId);
+                    pause();
+                    break;
+                case "8":
+                    cancelOrderWorkflow();
+                    break;
+                case "9":
+                    System.out.println("\n====================== NOTIFICATIONS INBOX ======================");
+                    System.out.println("[ALERT] Welcome to Telecom Order Management & Network Provisioning System!");
+                    System.out.println("[SMS] KYC documents: VERIFIED. You are eligible for 5G & Fiber lines.");
+                    System.out.println("[INFO] Network Core NODE-AMDOCS-CORE-01 is fully operational.");
+                    System.out.println("=================================================================");
+                    pause();
+                    break;
+                case "10":
                     logout = true;
-                    System.out.println("\nLogged out successfully.");
+                    System.out.println("\n[✔] Logged out successfully. Returning to main menu.");
                     break;
                 default:
-                    System.out.println("\n[!] Invalid choice. Please enter a number between 1 and 5.");
+                    System.out.println("\n[!] Invalid choice. Please select 1-10.");
             }
         }
     }
+
+    private static void pause() {
+        System.out.print("\nPress Enter to return to Customer Dashboard...");
+        scanner.nextLine();
+    }
+        
+         
     // =========================================================================
     // AUTHENTICATION & SECURITY (Page 2: CAPTCHA, OTP, Account Locking)
     // =========================================================================
@@ -379,6 +421,8 @@ public class MainApp {
             }
         }
 
+        
+
         if (cartItems.isEmpty()) {
             System.out.println("\n[!] Cart is empty. Order aborted.");
             return;
@@ -399,6 +443,27 @@ public class MainApp {
             System.out.println("\n[X] Order placement failed.");
         }
     }
+
+    private static void cancelOrderWorkflow() {
+        printHeader("CANCEL TELECOM ORDER");
+        try {
+            System.out.print("Enter Order ID to cancel: ");
+            long orderId = Long.parseLong(scanner.nextLine().trim());
+            
+            // Customer initiates cancellation (isAdmin = false)
+            orderDAO.cancelOrder(orderId, false);
+
+        } catch (com.amdocs.telecom.exception.InvalidOrderOperationException e) {
+            System.out.println("\n[BUSINESS RULE VIOLATION EXCEPTION]");
+            System.out.println("[X] " + e.getMessage());
+        } catch (NumberFormatException e) {
+            System.out.println("\n[X] Invalid Order ID format.");
+        }
+        System.out.print("\nPress Enter to return to Customer Dashboard...");
+        scanner.nextLine();
+    }
+
+    
 
     private static void trackAndActivateOrder() {
         printHeader("ORDER TRACKING & NETWORK ACTIVATION");

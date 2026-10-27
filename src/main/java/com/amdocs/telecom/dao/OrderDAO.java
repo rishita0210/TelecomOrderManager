@@ -1,21 +1,29 @@
 package com.amdocs.telecom.dao;
 
+import com.amdocs.telecom.exception.InvalidOrderOperationException;
+import com.amdocs.telecom.model.OrderItem;
+import com.amdocs.telecom.model.TelecomOrder;
 import com.amdocs.telecom.util.DBConnection;
-import java.sql.*;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OrderDAO {
 
-    
+    // 1. Single-Item Checkout Method
     public long placeOrder(int customerId, String productCode, double amount, String paymentMode) {
         String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_type, order_status, total_amount) VALUES (?, ?, ?, 'CONFIRMED', ?)";
         String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price, discount, tax, total_amount) " +
-                   "SELECT ?, product_id, 1, ?, 0.00, ROUND(? * 0.18, 2), ROUND(? * 1.18, 2) " +
-                   "FROM telecom_product WHERE product_code = ?";
+                           "SELECT ?, product_id, 1, ?, 0.00, ROUND(? * 0.18, 2), ROUND(? * 1.18, 2) " +
+                           "FROM telecom_product WHERE product_code = ?";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
-        String provisioningQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
-        String productTypeQuery = "SELECT product_type FROM telecom_product WHERE product_code = ?";
-        String reserveInventoryQuery = "UPDATE inventory_item SET status = 'RESERVED', assigned_order_id = ? " +
-                                       "WHERE item_type = ? AND status = 'AVAILABLE' LIMIT 1";
+        String provQuery = "INSERT INTO provisioning_request (order_id, service_type, provisioning_status, network_element_id) VALUES (?, ?, 'PENDING', 'NODE-AMDOCS-CORE-01')";
+        String reserveInvQuery = "UPDATE inventory_item SET status = 'RESERVED', assigned_order_id = ? WHERE item_type = ? AND status = 'AVAILABLE' LIMIT 1";
 
         String orderNumber = "ORD-" + System.currentTimeMillis();
         String txRef = "TXN-" + System.currentTimeMillis();
@@ -26,23 +34,28 @@ public class OrderDAO {
         try {
             conn.setAutoCommit(false);
 
-            // Determine Section 5 Order Type BEFORE executing the statement
             String orderType = "NEW_CONNECTION";
+            String hardwareType = "SIM";
+            String provType = "MOBILE_SERVICE";
+
             if (productCode.startsWith("PROD2")) {
                 orderType = "BROADBAND";
+                hardwareType = "ROUTER";
+                provType = "BROADBAND";
             } else if (productCode.startsWith("PROD3")) {
                 orderType = "ENTERPRISE";
-            } else if (productCode.contains("ESIM")) {
-                orderType = "ESIM_ACTIVATION";
+                hardwareType = "ONT";
+                provType = "VPN";
+            } else if (productCode.contains("5G")) {
+                provType = "5G_SERVICE";
             }
 
-            // 1. Insert Order & retrieve generated order_id
             long generatedOrderId = -1;
             try (PreparedStatement orderStmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                 orderStmt.setString(1, orderNumber);
                 orderStmt.setInt(2, customerId);
-                orderStmt.setString(3, orderType);    // <--- Correctly sets parameter #3 (order_type)
-                orderStmt.setDouble(4, amount);       // <--- Correctly sets parameter #4 (total_amount)
+                orderStmt.setString(3, orderType);
+                orderStmt.setDouble(4, amount * 1.18);
                 orderStmt.executeUpdate();
 
                 ResultSet rs = orderStmt.getGeneratedKeys();
@@ -54,150 +67,54 @@ public class OrderDAO {
                 }
             }
 
-            // 2. Insert Order Item
             try (PreparedStatement itemStmt = conn.prepareStatement(itemQuery)) {
                 itemStmt.setLong(1, generatedOrderId);
-                itemStmt.setDouble(2, amount); // unit_price
-                itemStmt.setDouble(3, amount); // tax calculation (18%)
-                itemStmt.setDouble(4, amount); // total line item amount with tax
+                itemStmt.setDouble(2, amount);
+                itemStmt.setDouble(3, amount);
+                itemStmt.setDouble(4, amount);
                 itemStmt.setString(5, productCode);
                 itemStmt.executeUpdate();
             }
 
-            // 3. Insert Payment Record
             try (PreparedStatement payStmt = conn.prepareStatement(paymentQuery)) {
                 payStmt.setLong(1, generatedOrderId);
                 payStmt.setString(2, txRef);
-                payStmt.setDouble(3, amount);
+                payStmt.setDouble(3, amount * 1.18);
                 payStmt.setString(4, paymentMode);
                 payStmt.executeUpdate();
             }
 
-            // 4. Determine Hardware Requirement & Section 10 Provisioning Type
-            String requiredItemType = "SIM";
-            String provisioningType = "MOBILE_SERVICE"; // Default Section 10 provisioning type
-
-            try (PreparedStatement pTypeStmt = conn.prepareStatement(productTypeQuery)) {
-                pTypeStmt.setString(1, productCode);
-                ResultSet rs = pTypeStmt.executeQuery();
-                if (rs.next()) {
-                    String pType = rs.getString("product_type");
-
-                    if ("BROADBAND".equalsIgnoreCase(pType)) {
-                        requiredItemType = "ROUTER";
-                        provisioningType = "BROADBAND";
-                    } else if ("ENTERPRISE".equalsIgnoreCase(pType)) {
-                        requiredItemType = "ONT";
-                        provisioningType = "VPN";
-                    } else if (productCode.contains("5G")) {
-                        provisioningType = "5G_SERVICE";
-                    }
-                }
-            }
-
-            // 5. Create Network Provisioning Ticket (Mapped to Section 10 Provisioning Type)
-            try (PreparedStatement provStmt = conn.prepareStatement(provisioningQuery)) {
+            try (PreparedStatement provStmt = conn.prepareStatement(provQuery)) {
                 provStmt.setLong(1, generatedOrderId);
-                provStmt.setString(2, provisioningType); // <--- Stores 'BROADBAND', '5G_SERVICE', or 'VPN'
+                provStmt.setString(2, provType);
                 provStmt.executeUpdate();
-                System.out.printf("[✔] Network Engine: Provisioning ticket generated (%s - PENDING) for Order #%d\n", 
-                    provisioningType, generatedOrderId);
             }
 
-            // 6. Reserve Hardware in Warehouse
-            try (PreparedStatement invStmt = conn.prepareStatement(reserveInventoryQuery)) {
+            try (PreparedStatement invStmt = conn.prepareStatement(reserveInvQuery)) {
                 invStmt.setLong(1, generatedOrderId);
-                invStmt.setString(2, requiredItemType); // <--- Still reserves 'ROUTER', 'SIM', or 'ONT'
-                int rowsUpdated = invStmt.executeUpdate();
-                if (rowsUpdated > 0) {
-                    System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", requiredItemType, generatedOrderId);
+                invStmt.setString(2, hardwareType);
+                int rows = invStmt.executeUpdate();
+                if (rows > 0) {
+                    System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", hardwareType, generatedOrderId);
                 } else {
-                    System.out.printf("[!] Inventory Notice: No available %s in stock. Order placed on backorder.\n", requiredItemType);
+                    System.out.printf("[!] Inventory Notice: %s out of stock. Placed on backorder.\n", hardwareType);
                 }
             }
-      
+
             conn.commit();
-            System.out.println("[✔] Order Placed Successfully! Order Number: " + orderNumber);
-            return generatedOrderId; // Returns the valid Order ID (e.g., 7 or 8)
+            return generatedOrderId;
 
         } catch (SQLException e) {
             try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            System.err.println("[X] Order placement failed, transaction rolled back: " + e.getMessage());
+            System.err.println("[X] Transaction rolled back: " + e.getMessage());
             return -1;
-        } finally {
-            try { conn.setAutoCommit(true); } catch (SQLException e) { e.printStackTrace(); }
-        }
-    }
-    // Case Study Section 13: Order Cancellation with Hardware Release
-    public boolean cancelOrder(long orderId) {
-        String checkStatusQuery = "SELECT order_status FROM telecom_order WHERE order_id = ?";
-        String updateOrderQuery = "UPDATE telecom_order SET order_status = 'CANCELLED' WHERE order_id = ?";
-        String releaseInventoryQuery = "UPDATE inventory_item SET status = 'AVAILABLE', assigned_order_id = NULL WHERE assigned_order_id = ?";
-        String cancelProvQuery = "UPDATE provisioning_request SET provisioning_status = 'CANCELLED' WHERE order_id = ?";
-
-        Connection conn = DBConnection.getConnection();
-        if (conn == null) return false;
-
-        try {
-            // 1. Check current order status
-            try (PreparedStatement checkStmt = conn.prepareStatement(checkStatusQuery)) {
-                checkStmt.setLong(1, orderId);
-                ResultSet rs = checkStmt.executeQuery();
-                if (!rs.next()) {
-                    System.out.println("[X] Cancellation Error: Order ID not found.");
-                    return false;
-                }
-                String currentStatus = rs.getString("order_status");
-                if ("ACTIVATED".equalsIgnoreCase(currentStatus) || "COMPLETED".equalsIgnoreCase(currentStatus)) {
-                    System.out.println("[X] Cancellation Rejected: Service is already ACTIVATED. Disconnection request required.");
-                    return false;
-                }
-                if ("CANCELLED".equalsIgnoreCase(currentStatus)) {
-                    System.out.println("[!] Order is already CANCELLED.");
-                    return false;
-                }
-            }
-
-            // Start atomic transaction
-            conn.setAutoCommit(false);
-
-            // 2. Mark order as CANCELLED
-            try (PreparedStatement ordStmt = conn.prepareStatement(updateOrderQuery)) {
-                ordStmt.setLong(1, orderId);
-                ordStmt.executeUpdate();
-            }
-
-            // 3. Release reserved hardware back to AVAILABLE in warehouse
-            int releasedCount = 0;
-            try (PreparedStatement invStmt = conn.prepareStatement(releaseInventoryQuery)) {
-                invStmt.setLong(1, orderId);
-                releasedCount = invStmt.executeUpdate();
-            }
-
-            // 4. Cancel any open provisioning ticket
-            try (PreparedStatement provStmt = conn.prepareStatement(cancelProvQuery)) {
-                provStmt.setLong(1, orderId);
-                provStmt.executeUpdate();
-            }
-
-            conn.commit();
-            System.out.printf("[✔] SUCCESS: Order #%d has been CANCELLED.\n", orderId);
-            if (releasedCount > 0) {
-                System.out.printf("[✔] Inventory Released: %d hardware unit(s) returned to AVAILABLE stock.\n", releasedCount);
-            }
-            return true;
-
-        } catch (SQLException e) {
-            try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            System.err.println("[X] Cancellation failed, rolled back: " + e.getMessage());
-            return false;
         } finally {
             try { conn.setAutoCommit(true); } catch (SQLException ex) { ex.printStackTrace(); }
         }
     }
 
-    public boolean placeMultiItemOrder(int customerId, java.util.List<com.amdocs.telecom.model.OrderItem> cartItems, 
-                                       java.util.List<String> productCodes, double grandTotal, String paymentMode) {
+    // 2. Multi-Item Cart Checkout (Section 6)
+    public boolean placeMultiItemOrder(int customerId, List<OrderItem> cartItems, List<String> productCodes, double grandTotal, String paymentMode) {
         String orderQuery = "INSERT INTO telecom_order (order_number, customer_id, order_type, order_status, total_amount) VALUES (?, ?, ?, 'CONFIRMED', ?)";
         String itemQuery = "INSERT INTO order_item (order_id, product_id, quantity, unit_price, discount, tax, total_amount) VALUES (?, ?, ?, ?, ?, ?, ?)";
         String paymentQuery = "INSERT INTO order_payment (order_id, transaction_reference, amount, payment_mode, payment_status) VALUES (?, ?, ?, ?, 'SUCCESS')";
@@ -213,7 +130,6 @@ public class OrderDAO {
         try {
             conn.setAutoCommit(false);
 
-            // 1. Determine dominant Order Type
             String orderType = "NEW_CONNECTION";
             if (productCodes.stream().anyMatch(c -> c.startsWith("PROD2"))) {
                 orderType = "BROADBAND";
@@ -223,7 +139,6 @@ public class OrderDAO {
                 orderType = "ESIM_ACTIVATION";
             }
 
-            // 2. Insert Order Header
             long generatedOrderId = -1;
             try (PreparedStatement orderStmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                 orderStmt.setString(1, orderNumber);
@@ -241,9 +156,8 @@ public class OrderDAO {
                 }
             }
 
-            // 3. Insert All Line Items
             try (PreparedStatement itemStmt = conn.prepareStatement(itemQuery)) {
-                for (com.amdocs.telecom.model.OrderItem item : cartItems) {
+                for (OrderItem item : cartItems) {
                     itemStmt.setLong(1, generatedOrderId);
                     itemStmt.setInt(2, item.getProductId());
                     itemStmt.setInt(3, item.getQuantity());
@@ -256,7 +170,6 @@ public class OrderDAO {
                 itemStmt.executeBatch();
             }
 
-            // 4. Record Payment
             try (PreparedStatement payStmt = conn.prepareStatement(paymentQuery)) {
                 payStmt.setLong(1, generatedOrderId);
                 payStmt.setString(2, txRef);
@@ -265,14 +178,12 @@ public class OrderDAO {
                 payStmt.executeUpdate();
             }
 
-            // 5. Create Provisioning Request
             try (PreparedStatement provStmt = conn.prepareStatement(provQuery)) {
                 provStmt.setLong(1, generatedOrderId);
                 provStmt.setString(2, orderType);
                 provStmt.executeUpdate();
             }
 
-            // 6. Reserve Inventory for each product category
             for (String code : productCodes) {
                 String reqHardware = "SIM";
                 if (code.startsWith("PROD2")) reqHardware = "ROUTER";
@@ -285,8 +196,6 @@ public class OrderDAO {
                     int updated = invStmt.executeUpdate();
                     if (updated > 0) {
                         System.out.printf("[✔] Inventory Allocation: Reserved 1 %s for Order #%d\n", reqHardware, generatedOrderId);
-                    } else {
-                        System.out.printf("[!] Inventory Notice: %s stock low. Item placed on backorder.\n", reqHardware);
                     }
                 }
             }
@@ -303,46 +212,198 @@ public class OrderDAO {
             try { conn.setAutoCommit(true); } catch (SQLException ex) { ex.printStackTrace(); }
         }
     }
-    // Fetch and display all past orders for a customer using SQL JOINs
-    public void displayCustomerOrders(int customerId) {
-        String query = "SELECT o.order_id, o.order_number, p.product_name, o.total_amount, " +
-                       "o.order_status, o.order_date, pay.payment_mode " +
-                       "FROM telecom_order o " +
-                       "JOIN order_item oi ON o.order_id = oi.order_id " +
-                       "JOIN telecom_product p ON oi.product_id = p.product_id " +
-                       "LEFT JOIN order_payment pay ON o.order_id = pay.order_id " +
-                       "WHERE o.customer_id = ? " +
-                       "ORDER BY o.order_date DESC";
 
+    // 3. Section 13: Order Cancellation with Business State Machine & Custom Exception
+    public boolean cancelOrder(long orderId, boolean isAdmin) throws InvalidOrderOperationException {
+        String checkStatusQuery = "SELECT order_status FROM telecom_order WHERE order_id = ?";
+        String updateOrderQuery = "UPDATE telecom_order SET order_status = 'CANCELLED' WHERE order_id = ?";
+        String releaseInventoryQuery = "UPDATE inventory_item SET status = 'AVAILABLE', assigned_order_id = NULL WHERE assigned_order_id = ?";
+        String cancelProvQuery = "UPDATE provisioning_request SET provisioning_status = 'CANCELLED' WHERE order_id = ?";
+
+        Connection conn = DBConnection.getConnection();
+        if (conn == null) return false;
+
+        try {
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkStatusQuery)) {
+                checkStmt.setLong(1, orderId);
+                ResultSet rs = checkStmt.executeQuery();
+                if (!rs.next()) {
+                    throw new InvalidOrderOperationException("Order ID #" + orderId + " not found in the system.");
+                }
+                String currentStatus = rs.getString("order_status");
+
+                if ("ACTIVATED".equalsIgnoreCase(currentStatus) || "COMPLETED".equalsIgnoreCase(currentStatus)) {
+                    throw new InvalidOrderOperationException(
+                        "Cannot cancel Order #" + orderId + " in " + currentStatus + " status. Active services require service termination / disconnection workflow.");
+                }
+
+                if ("PROVISIONING".equalsIgnoreCase(currentStatus) && !isAdmin) {
+                    throw new InvalidOrderOperationException(
+                        "Order #" + orderId + " is currently in PROVISIONING. Cancellation requires Administrator approval.");
+                }
+
+                if ("CANCELLED".equalsIgnoreCase(currentStatus)) {
+                    throw new InvalidOrderOperationException("Order #" + orderId + " is already in CANCELLED status.");
+                }
+            }
+
+            conn.setAutoCommit(false);
+
+            try (PreparedStatement ordStmt = conn.prepareStatement(updateOrderQuery)) {
+                ordStmt.setLong(1, orderId);
+                ordStmt.executeUpdate();
+            }
+
+            int releasedCount = 0;
+            try (PreparedStatement invStmt = conn.prepareStatement(releaseInventoryQuery)) {
+                invStmt.setLong(1, orderId);
+                releasedCount = invStmt.executeUpdate();
+            }
+
+            try (PreparedStatement provStmt = conn.prepareStatement(cancelProvQuery)) {
+                provStmt.setLong(1, orderId);
+                provStmt.executeUpdate();
+            }
+
+            conn.commit();
+            System.out.printf("\n[✔] SUCCESS: Order #%d has been CANCELLED.\n", orderId);
+            if (releasedCount > 0) {
+                System.out.printf("[✔] Inventory Released: %d hardware unit(s) returned to AVAILABLE stock.\n", releasedCount);
+            }
+            return true;
+
+        } catch (SQLException e) {
+            try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            System.err.println("[X] Cancellation failed, rolled back: " + e.getMessage());
+            return false;
+        } finally {
+            try { conn.setAutoCommit(true); } catch (SQLException ex) { ex.printStackTrace(); }
+        }
+    }
+
+    // 4. View Customer Past Orders
+    public void displayCustomerOrders(int customerId) {
+        String query = "SELECT o.order_id, o.order_number, o.order_type, o.order_status, o.total_amount, o.order_date " +
+                       "FROM telecom_order o WHERE o.customer_id = ? ORDER BY o.order_id DESC";
         try (Connection conn = DBConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(query)) {
-
             pstmt.setInt(1, customerId);
             ResultSet rs = pstmt.executeQuery();
 
-            boolean found = false;
-            System.out.printf("%-8s %-22s %-20s %-10s %-12s %-12s\n", 
-                "Order ID", "Order Number", "Product", "Amount", "Status", "Payment");
-            System.out.println("-----------------------------------------------------------------------------------------");
+            System.out.println("\n-------------------------------------------------------------------------------------------");
+            System.out.printf("%-8s | %-20s | %-16s | %-12s | %-10s | %-20s\n", 
+                "Order ID", "Order Number", "Order Type", "Status", "Total ($)", "Order Date");
+            System.out.println("-------------------------------------------------------------------------------------------");
 
+            boolean hasOrders = false;
             while (rs.next()) {
-                found = true;
-                System.out.printf("%-8d %-22s %-20s $%-9.2f %-12s %-12s\n",
+                hasOrders = true;
+                System.out.printf("%-8d | %-20s | %-16s | %-12s | $%-9.2f | %-20s\n",
                     rs.getInt("order_id"),
                     rs.getString("order_number"),
-                    rs.getString("product_name"),
-                    rs.getDouble("total_amount"),
+                    rs.getString("order_type"),
                     rs.getString("order_status"),
-                    rs.getString("payment_mode") != null ? rs.getString("payment_mode") : "N/A");
+                    rs.getDouble("total_amount"),
+                    rs.getTimestamp("order_date").toString()
+                );
             }
 
-            if (!found) {
-                System.out.println("No past orders found for Customer ID: " + customerId);
+            if (!hasOrders) {
+                System.out.println("No past orders found for this account.");
             }
-            System.out.println("-----------------------------------------------------------------------------------------");
+            System.out.println("-------------------------------------------------------------------------------------------");
 
         } catch (SQLException e) {
             System.err.println("Error fetching customer orders: " + e.getMessage());
+        }
+    }
+
+    // Section 15, Option 5: Step-by-Step Visual Lifecycle Pipeline
+    public void trackOrderVisualPipeline(long orderId) {
+        String query = "SELECT o.order_id, o.order_number, o.order_status, p.payment_status, pr.provisioning_status " +
+                       "FROM telecom_order o " +
+                       "LEFT JOIN order_payment p ON o.order_id = p.order_id " +
+                       "LEFT JOIN provisioning_request pr ON o.order_id = pr.order_id " +
+                       "WHERE o.order_id = ?";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setLong(1, orderId);
+            ResultSet rs = pstmt.executeQuery();
+            if (!rs.next()) {
+                System.out.println("\n[X] Order ID #" + orderId + " not found.");
+                return;
+            }
+
+            String ordStatus = rs.getString("order_status");
+            String payStatus = rs.getString("payment_status");
+            String provStatus = rs.getString("provisioning_status");
+
+            System.out.println("\n==========================================================================");
+            System.out.printf(" TRACKING AUDIT FOR ORDER #%d (%s)\n", orderId, rs.getString("order_number"));
+            System.out.println("==========================================================================");
+
+            boolean isCancelled = "CANCELLED".equalsIgnoreCase(ordStatus);
+            boolean isActivated = "ACTIVATED".equalsIgnoreCase(ordStatus) || "COMPLETED".equalsIgnoreCase(ordStatus);
+
+            System.out.println("[✔] Step 1: Order Created");
+            System.out.println("[✔] Step 2: Validated (KYC & Product restrictions passed)");
+            System.out.println("PAYMENT_PENDING".equalsIgnoreCase(payStatus) ? "[ ] Step 3: Payment Pending" : "[✔] Step 3: Payment Confirmed");
+            System.out.println(isCancelled ? "[X] Step 4: Inventory Released (Order Cancelled)" : "[✔] Step 4: Inventory Reserved");
+            
+            if (isCancelled) {
+                System.out.println("[X] Step 5: Provisioning Aborted");
+                System.out.println("[X] Step 6: Order Terminated (CANCELLED)");
+            } else if (isActivated) {
+                System.out.println("[✔] Step 5: Provisioning Completed (Network handshake OK)");
+                System.out.println("[✔] Step 6: Activated (Live on NODE-AMDOCS-CORE-01)");
+                System.out.println("[✔] Step 7: Completed (Customer Subscription Active)");
+            } else {
+                System.out.println("[➔] Step 5: Provisioning In-Progress (Pending network allocation)");
+                System.out.println("[ ] Step 6: Activated");
+                System.out.println("[ ] Step 7: Completed");
+            }
+            System.out.println("==========================================================================");
+
+        } catch (SQLException e) {
+            System.err.println("Error tracking order: " + e.getMessage());
+        }
+    }
+
+    // Section 15, Option 7: View Active Subscriptions
+    public void displayActiveServices(int customerId) {
+        String query = "SELECT s.subscription_id, p.product_name, p.product_type, s.status, s.start_date " +
+                       "FROM customer_subscription s " +
+                       "JOIN telecom_product p ON s.product_id = p.product_id " +
+                       "WHERE s.customer_id = ? AND s.status = 'ACTIVE'";
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, customerId);
+            ResultSet rs = pstmt.executeQuery();
+
+            System.out.println("\n======================= ACTIVE SUBSCRIBER SERVICES =======================");
+            System.out.printf("%-16s | %-24s | %-16s | %-12s | %-20s\n", 
+                "Subscription ID", "Plan / Service", "Type", "Status", "Start Date");
+            System.out.println("--------------------------------------------------------------------------");
+
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.printf("SUB-%-12d | %-24s | %-16s | %-12s | %-20s\n",
+                    rs.getInt("subscription_id"),
+                    rs.getString("product_name"),
+                    rs.getString("product_type"),
+                    rs.getString("status"),
+                    rs.getTimestamp("start_date").toString()
+                );
+            }
+            if (!found) {
+                System.out.println("No active live services found. Place an order to subscribe!");
+            }
+            System.out.println("==========================================================================");
+        } catch (SQLException e) {
+            System.err.println("Error fetching active services: " + e.getMessage());
         }
     }
 }

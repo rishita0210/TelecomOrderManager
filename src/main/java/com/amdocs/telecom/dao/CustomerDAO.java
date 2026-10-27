@@ -29,6 +29,30 @@ public class CustomerDAO {
         }
     }
 
+    public void displayCustomerProfile(int customerId) {
+        String query = "SELECT customer_number, customer_name, email, mobile_number, customer_type, address, city, identity_status, account_status, registration_date FROM customer WHERE customer_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, customerId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                System.out.println("\n================ CUSTOMER PROFILE ================");
+                System.out.println("Account Number  : " + rs.getString("customer_number"));
+                System.out.println("Customer Name   : " + rs.getString("customer_name"));
+                System.out.println("Email Address   : " + rs.getString("email"));
+                System.out.println("Mobile Number   : " + rs.getString("mobile_number"));
+                System.out.println("Customer Type   : " + rs.getString("customer_type"));
+                System.out.println("Address         : " + rs.getString("address") + ", " + rs.getString("city"));
+                System.out.println("KYC Status      : " + rs.getString("identity_status"));
+                System.out.println("Account Status  : " + rs.getString("account_status"));
+                System.out.println("Member Since    : " + rs.getTimestamp("registration_date"));
+                System.out.println("==================================================");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching profile: " + e.getMessage());
+        }
+    }
+
     public Customer getCustomerByEmail(String email) {
         String query = "SELECT * FROM customer WHERE email = ?";
         try (Connection conn = DBConnection.getConnection();

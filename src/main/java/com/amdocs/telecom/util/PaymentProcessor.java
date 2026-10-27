@@ -27,3 +27,11 @@ class NetBankingPaymentProcessor implements PaymentProcessor {
         return true;
     }
 }
+
+class BankTransferPaymentProcessor implements PaymentProcessor {
+    @Override
+    public boolean process(double amount) {
+        System.out.printf("[PAYMENT GATEWAY - BANK TRANSFER] Verifying NEFT/RTGS wire transfer of $%.2f... SUCCESS.\n", amount);
+        return true;
+    }
+}

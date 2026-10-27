@@ -10,6 +10,8 @@ public class PaymentFactory {
                 return new CardPaymentProcessor();
             case "NET_BANKING":
                 return new NetBankingPaymentProcessor();
+            case "BANK_TRANSFER":
+                return new BankTransferPaymentProcessor();
             default:
                 return null;
         }
